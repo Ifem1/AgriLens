@@ -25,7 +25,9 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  console.log("Middleware:", request.nextUrl.pathname, "user:", user?.id ?? "NONE", "error:", userError?.message ?? "none", "cookies:", request.cookies.getAll().map(c => c.name).join(", "));
 
   const protectedPaths = ["/dashboard", "/validations", "/agents", "/policies", "/audit", "/analytics", "/settings", "/admin", "/consensus", "/escalations", "/community"];
   const isProtected = protectedPaths.some((p) => request.nextUrl.pathname.startsWith(p));

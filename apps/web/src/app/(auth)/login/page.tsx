@@ -34,9 +34,11 @@ export default function LoginPage() {
         return;
       }
 
-      // Force the router to pick up the new auth state
-      router.push("/dashboard");
-      router.refresh();
+      // Verify session is actually stored before navigating
+      const { data: { session: verifySession } } = await supabase.auth.getSession();
+      console.log("Login session verify:", verifySession ? "OK" : "MISSING");
+
+      window.location.href = "/dashboard";
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Login failed");
       setLoading(false);
