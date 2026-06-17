@@ -8,7 +8,8 @@ import { TopNav } from "@/components/layout/TopNav";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Upload, MapPin, Cloud, Globe, Lock } from "lucide-react";
+import { Upload, MapPin, Cloud, Globe, Lock, KeyRound } from "lucide-react";
+import { decryptPrivateKey } from "@/lib/wallet/encrypt";
 import type { Policy } from "@/types/database";
 
 const fieldStyle = {
@@ -54,6 +55,7 @@ export default function NewValidationPage() {
   const [longitude, setLongitude] = useState("");
   const [policyId, setPolicyId] = useState("");
   const [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [password, setPassword] = useState("");
 
   useEffect(() => {
     async function fetchData() {
@@ -106,6 +108,23 @@ export default function NewValidationPage() {
         orgId = membership.org_id;
       }
 
+      // Decrypt wallet private key for on-chain signing
+      let signingKey: string | null = null;
+      if (password) {
+        try {
+          const { data: walletRow } = await supabase
+            .from("wallets")
+            .select("encrypted_private_key")
+            .eq("user_id", (await supabase.auth.getUser()).data.user!.id)
+            .single();
+          if (walletRow?.encrypted_private_key) {
+            signingKey = await decryptPrivateKey(walletRow.encrypted_private_key, password);
+          }
+        } catch {
+          toast.error("Wrong password — validation will use AI fallback instead of on-chain.");
+        }
+      }
+
       let photoUrl: string | null = null;
       if (photo) {
         const ext = photo.name.split(".").pop() ?? "jpg";
@@ -126,6 +145,7 @@ export default function NewValidationPage() {
           crop_stage: cropStage,
           farmer_notes: notes,
           photo_url: photoUrl,
+          signing_key: signingKey,
           policy_id: policyId || null,
           latitude: parseFloat(latitude),
           longitude: parseFloat(longitude),
@@ -320,6 +340,24 @@ export default function NewValidationPage() {
               </select>
             </div>
           )}
+
+          {/* Wallet password for on-chain signing */}
+          <div style={cardStyle}>
+            <p className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: "var(--al-text)" }}>
+              <KeyRound className="h-4 w-4" style={{ color: "var(--al-muted)" }} />
+              On-Chain Signing (optional)
+            </p>
+            <p className="text-xs mb-3" style={{ color: "var(--al-sec)" }}>
+              Enter your account password to sign this validation on Genlayer. Leave blank to use AI-only validation.
+            </p>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Account password"
+              style={fieldStyle}
+            />
+          </div>
 
           <button
             type="submit"

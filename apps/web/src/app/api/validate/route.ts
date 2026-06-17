@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     );
 
     const body = await request.json();
-    const { crop_name, crop_stage, farmer_notes, photo_url, policy_id, latitude, longitude, visibility, is_paid } = body;
+    const { crop_name, crop_stage, farmer_notes, photo_url, policy_id, latitude, longitude, visibility, is_paid, signing_key } = body;
 
     // 1. Get org
     const { data: membership } = await supabase
@@ -119,7 +119,9 @@ export async function POST(request: NextRequest) {
     let genlayerResult: any = null;
 
     try {
-      const account = createAccount();
+      const account = signing_key
+        ? createAccount(signing_key as `0x${string}`)
+        : createAccount();
       const glClient = createGenlayerClient({ chain: studionet, account });
 
       txHash = (await glClient.writeContract({
