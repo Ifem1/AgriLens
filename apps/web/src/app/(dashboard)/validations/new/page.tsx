@@ -86,16 +86,31 @@ export default function NewValidationPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!org) return;
     setLoading(true);
 
     try {
       const supabase = createClient();
+
+      // Get org if not already loaded
+      let orgId = org?.id;
+      if (!orgId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Not authenticated");
+        const { data: membership } = await supabase
+          .from("org_members")
+          .select("org_id")
+          .eq("user_id", user.id)
+          .limit(1)
+          .single();
+        if (!membership) throw new Error("No organization found. Please complete account setup.");
+        orgId = membership.org_id;
+      }
+
       let photoUrl: string | null = null;
 
       if (photo) {
         const ext = photo.name.split(".").pop();
-        const path = `${org.id}/${Date.now()}.${ext}`;
+        const path = `${orgId}/${Date.now()}.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from("farmer-photos")
           .upload(path, photo, { contentType: photo.type });
@@ -106,6 +121,7 @@ export default function NewValidationPage() {
 
       const { data, error } = await supabase.functions.invoke("submit-validation", {
         body: {
+          org_id: orgId,
           crop_name: cropName,
           crop_stage: cropStage,
           farmer_notes: notes,
