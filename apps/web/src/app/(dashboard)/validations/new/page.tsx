@@ -106,35 +106,24 @@ export default function NewValidationPage() {
         orgId = membership.org_id;
       }
 
-      let photoUrl: string | null = null;
-
-      if (photo) {
-        const ext = photo.name.split(".").pop();
-        const path = `${orgId}/${Date.now()}.${ext}`;
-        const { error: uploadError } = await supabase.storage
-          .from("farmer-photos")
-          .upload(path, photo, { contentType: photo.type });
-        if (uploadError) throw uploadError;
-        const { data: urlData } = supabase.storage.from("farmer-photos").getPublicUrl(path);
-        photoUrl = urlData.publicUrl;
-      }
-
-      const { data, error } = await supabase.functions.invoke("submit-validation", {
-        body: {
-          org_id: orgId,
+      const res = await fetch("/api/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           crop_name: cropName,
           crop_stage: cropStage,
           farmer_notes: notes,
-          photo_url: photoUrl,
+          photo_url: null,
           policy_id: policyId || null,
           latitude: parseFloat(latitude),
           longitude: parseFloat(longitude),
           visibility,
           is_paid: visibility === "private",
-        },
+        }),
       });
 
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Submission failed");
       toast.success("Validation submitted! Awaiting consensus.");
       router.push(`/validations/${data.request_id}`);
     } catch (err: any) {
