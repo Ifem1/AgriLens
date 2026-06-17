@@ -126,14 +126,18 @@ export async function POST(request: NextRequest) {
 
       txHash = (await glClient.writeContract({
         address: CONTRACT,
-        functionName: "validate_crop",
+        functionName: "submit_validation",
         args: [
           requestId,
+          orgId,
+          walletData?.public_address ?? "default-agent",
           crop_name ?? "Unknown",
           crop_stage ?? "",
           farmer_notes,
+          photo_url ?? "no photo provided",
           JSON.stringify(weather ?? {}),
-          "null",
+          policy_id ?? "",
+          requestId,
         ],
         value: 0n,
       })) as string;
@@ -150,7 +154,7 @@ export async function POST(request: NextRequest) {
       // Read result from contract
       const resultData = await glClient.readContract({
         address: CONTRACT,
-        functionName: "get_result",
+        functionName: "get_validation_result",
         args: [requestId],
       });
 
