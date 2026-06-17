@@ -2,25 +2,56 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { loginAction } from "./actions";
 
 export default function LoginPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleLogin(formData: FormData) {
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
     setLoading(true);
+
     try {
-      const result = await loginAction(formData);
-      if (result?.error) {
-        toast.error(result.error);
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (error) {
+        toast.error(error.message);
         setLoading(false);
+        return;
       }
-    } catch {
-      // redirect() throws a NEXT_REDIRECT error — this is expected
-      // The page will navigate to /dashboard
+
+      if (!data.session) {
+        toast.error("No session returned. Please confirm your email first.");
+        setLoading(false);
+        return;
+      }
+
+      // Set the session server-side so middleware can read it
+      const res = await fetch("/api/auth/callback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        }),
+      });
+
+      if (!res.ok) {
+        toast.error("Failed to establish session");
+        setLoading(false);
+        return;
+      }
+
+      window.location.href = "/dashboard";
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Login failed");
+      setLoading(false);
     }
   }
 
@@ -29,21 +60,23 @@ export default function LoginPage() {
       <h1 className="text-2xl font-bold mb-1" style={{ color: "var(--al-text)" }}>Welcome back</h1>
       <p className="text-sm mb-8" style={{ color: "var(--al-sec)" }}>Sign in to your AgriLens account</p>
 
-      <form action={handleLogin} className="space-y-4">
+      <form onSubmit={handleLogin} className="space-y-4">
         <Input
           id="email"
-          name="email"
           label="Email"
           type="email"
           placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           required
         />
         <Input
           id="password"
-          name="password"
           label="Password"
           type="password"
           placeholder="Your password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
           required
         />
         <Button type="submit" className="w-full" loading={loading}>
