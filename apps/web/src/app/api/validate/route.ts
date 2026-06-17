@@ -124,6 +124,41 @@ export async function POST(request: NextRequest) {
         : createAccount();
       const glClient = createGenlayerClient({ chain: studionet, account });
 
+      // Ensure org is registered on-chain
+      const isOrgRegistered = await glClient.readContract({
+        address: CONTRACT,
+        functionName: "is_organization_registered",
+        args: [orgId],
+      });
+      if (!isOrgRegistered) {
+        const { data: orgRow } = await supabase
+          .from("organizations").select("name, country, region").eq("id", orgId).single();
+        const regTx = await glClient.writeContract({
+          address: CONTRACT,
+          functionName: "register_organization",
+          args: [orgId, orgRow?.name ?? "Farm Org", orgRow?.country ?? "", orgRow?.region ?? "", "free"],
+          value: 0n,
+        });
+        await (glClient as any).waitForTransactionReceipt({ hash: regTx, status: "FINALIZED" });
+      }
+
+      // Ensure agent is registered on-chain
+      const agentId = walletData?.public_address ?? "default-agent";
+      const isAgentActive = await glClient.readContract({
+        address: CONTRACT,
+        functionName: "is_agent_active",
+        args: [agentId],
+      }).catch(() => false);
+      if (!isAgentActive) {
+        const agentTx = await glClient.writeContract({
+          address: CONTRACT,
+          functionName: "register_agent",
+          args: [agentId, orgId, "Validation Agent", "Auto-registered validation agent"],
+          value: 0n,
+        });
+        await (glClient as any).waitForTransactionReceipt({ hash: agentTx, status: "FINALIZED" });
+      }
+
       txHash = (await glClient.writeContract({
         address: CONTRACT,
         functionName: "submit_validation",
