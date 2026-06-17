@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Dark mode (default) ───────────────────────────────────────────────────── */
+:root {
+  --al-bg:      #0F0E47;
+  --al-card:    #1a1956;
+  --al-border:  #272757;
+  --al-text:    #F4F4FB;
+  --al-sec:     #8686AC;
+  --al-muted:   #505081;
+  --al-accent:  #505081;
+  --al-hover:   #272757;
+}
+
+/* ── Light mode ────────────────────────────────────────────────────────────── */
+.light {
+  --al-bg:      #F4F4FB;
+  --al-card:    #FFFFFF;
+  --al-border:  rgba(134,134,172,0.25);
+  --al-text:    #0F0E47;
+  --al-sec:     #505081;
+  --al-muted:   #8686AC;
+  --al-accent:  #272757;
+  --al-hover:   #0F0E47;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--al-bg);
+  color: var(--al-text);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; }
+::-webkit-scrollbar-track { background: var(--al-bg); }
+::-webkit-scrollbar-thumb { background: var(--al-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--al-muted); }
+
+/* ── Leaf background animation ─────────────────────────────────────────────── */
+.leaf-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.leaf {
+  position: absolute;
+  bottom: -60px;
+  will-change: transform;
+  animation: leaf-float var(--duration) ease-in-out infinite;
+  animation-delay: var(--delay);
+}
+
+.leaf svg {
+  animation: leaf-sway var(--sway, 3s) ease-in-out infinite;
+  animation-delay: var(--delay);
+  opacity: 0.18;
+  filter: blur(0.3px);
+}
+
+@keyframes leaf-float {
+  0%   { transform: translateY(110vh) translateX(0px) rotate(0deg); opacity: 0; }
+  5%   { opacity: 1; }
+  95%  { opacity: 1; }
+  100% { transform: translateY(-10vh) translateX(var(--drift, 40px)) rotate(var(--spin, 180deg)); opacity: 0; }
+}
+
+@keyframes leaf-sway {
+  0%, 100% { transform: rotate(-10deg); }
+  50%       { transform: rotate(10deg);  }
+}
+
+/* ── Utility classes ───────────────────────────────────────────────────────── */
+@layer utilities {
+  .glass {
+    background: rgba(26, 25, 86, 0.7);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--al-border);
+  }
+  .light .glass {
+    background: rgba(255, 255, 255, 0.8);
+  }
+  .card-surface {
+    background-color: var(--al-card);
+    border: 1px solid var(--al-border);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+  }
+  .text-gradient {
+    background: linear-gradient(135deg, #8686AC 0%, #F4F4FB 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .light .text-gradient {
+    background: linear-gradient(135deg, #272757 0%, #0F0E47 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .btn-accent {
+    background-color: var(--al-accent);
+    color: #F4F4FB;
+    transition: background-color 0.2s ease;
+  }
+  .btn-accent:hover {
+    background-color: var(--al-hover);
+  }
+}
