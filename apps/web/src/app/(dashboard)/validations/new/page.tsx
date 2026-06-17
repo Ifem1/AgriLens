@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Upload, MapPin, Cloud, Globe, Lock } from "lucide-react";
-import type { Crop, Policy } from "@/types/database";
+import type { Policy } from "@/types/database";
 
 const fieldStyle = {
   background: "var(--al-bg)",
@@ -42,11 +42,10 @@ export default function NewValidationPage() {
   const { org } = useOrgStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [crops, setCrops] = useState<Crop[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const [cropId, setCropId] = useState("");
+  const [cropName, setCropName] = useState("");
   const [cropStage, setCropStage] = useState("");
   const [notes, setNotes] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
@@ -59,11 +58,8 @@ export default function NewValidationPage() {
   useEffect(() => {
     async function fetchData() {
       const supabase = createClient();
-      const [{ data: cropsData }, { data: policiesData }] = await Promise.all([
-        supabase.from("crops").select("*").order("name"),
-        supabase.from("policies").select("*").eq("org_id", org?.id ?? "").eq("is_active", true),
-      ]);
-      setCrops(cropsData ?? []);
+      const { data: policiesData } = await supabase
+        .from("policies").select("*").eq("org_id", org?.id ?? "").eq("is_active", true);
       setPolicies(policiesData ?? []);
     }
     if (org) fetchData();
@@ -88,8 +84,6 @@ export default function NewValidationPage() {
     );
   }
 
-  const selectedCrop = crops.find((c) => c.id === cropId);
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!org) return;
@@ -112,7 +106,7 @@ export default function NewValidationPage() {
 
       const { data, error } = await supabase.functions.invoke("submit-validation", {
         body: {
-          crop_id: cropId,
+          crop_name: cropName,
           crop_stage: cropStage,
           farmer_notes: notes,
           photo_url: photoUrl,
@@ -227,39 +221,26 @@ export default function NewValidationPage() {
             <div className="space-y-4">
               <div>
                 <label style={labelStyle}>Crop</label>
-                <select
-                  value={cropId}
-                  onChange={(e) => { setCropId(e.target.value); setCropStage(""); }}
+                <input
+                  type="text"
+                  value={cropName}
+                  onChange={(e) => setCropName(e.target.value)}
                   required
+                  placeholder="e.g. Tomato, Cassava, Maize, Rice..."
                   style={fieldStyle}
-                >
-                  <option value="">Select a crop</option>
-                  {crops.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                />
               </div>
 
-              {selectedCrop && (
-                <div>
-                  <label style={labelStyle}>Growth Stage</label>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedCrop.growth_stages.map((stage) => (
-                      <button
-                        key={stage}
-                        type="button"
-                        onClick={() => setCropStage(stage)}
-                        className="rounded-full px-3 py-1 text-xs font-medium transition-all"
-                        style={{
-                          background: cropStage === stage ? "rgba(80,80,129,0.3)" : "var(--al-bg)",
-                          color: cropStage === stage ? "var(--al-text)" : "var(--al-sec)",
-                          border: `1px solid ${cropStage === stage ? "#505081" : "var(--al-border)"}`,
-                        }}
-                      >
-                        {stage}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div>
+                <label style={labelStyle}>Growth Stage (optional)</label>
+                <input
+                  type="text"
+                  value={cropStage}
+                  onChange={(e) => setCropStage(e.target.value)}
+                  placeholder="e.g. Seedling, Vegetative, Flowering, Fruiting..."
+                  style={fieldStyle}
+                />
+              </div>
             </div>
           </div>
 
