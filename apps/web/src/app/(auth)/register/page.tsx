@@ -32,12 +32,36 @@ export default function RegisterPage() {
         options: { data: { full_name: fullName } },
       });
 
-      if (authError) throw new Error(authError.message);
-      if (!authData.user) throw new Error("Registration failed — no user returned");
+      // If user already exists, try signing in instead
+      if (authError?.message?.includes("already registered")) {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw new Error(signInError.message);
+        if (!signInData.session) throw new Error("Could not sign in");
+
+        // Check if setup already done
+        const { data: existingMember } = await supabase
+          .from("org_members")
+          .select("id")
+          .eq("user_id", signInData.user.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingMember) {
+          window.location.href = "/dashboard";
+          return;
+        }
+        // Fall through to run setup for this existing user
+      } else if (authError) {
+        throw new Error(authError.message);
+      }
+
+      if (!authData?.user && !((await supabase.auth.getUser()).data.user)) {
+        throw new Error("Registration failed — no user returned");
+      }
 
       // If email confirmation is required, session may be null
-      const session = authData.session;
-      if (!session) {
+      const currentSession = authData?.session ?? (await supabase.auth.getSession()).data.session;
+      if (!currentSession) {
         toast.success("Check your email to confirm your account, then sign in.");
         router.push("/login");
         return;

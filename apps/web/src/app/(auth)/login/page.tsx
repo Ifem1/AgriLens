@@ -2,14 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,16 +16,44 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
-      toast.error(error.message);
+      if (error) {
+        toast.error(error.message);
+        setLoading(false);
+        return;
+      }
+
+      if (!data.session) {
+        toast.error("No session returned. Please confirm your email first.");
+        setLoading(false);
+        return;
+      }
+
+      // Check if this is a first-time login (no org setup yet)
+      const { data: membership } = await supabase
+        .from("org_members")
+        .select("id")
+        .eq("user_id", data.user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (!membership) {
+        // User confirmed email but setup-account never ran — redirect to register to complete setup
+        toast.error("Account setup incomplete. Please register again.");
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      // Hard navigate so middleware picks up fresh cookies
+      window.location.href = "/dashboard";
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Login failed");
       setLoading(false);
-      return;
     }
-
-    window.location.href = "/dashboard";
   }
 
   return (
