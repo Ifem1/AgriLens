@@ -32,23 +32,6 @@ export default function LoginPage() {
         return;
       }
 
-      // Check if this is a first-time login (no org setup yet)
-      const { data: membership } = await supabase
-        .from("org_members")
-        .select("id")
-        .eq("user_id", data.user.id)
-        .limit(1)
-        .maybeSingle();
-
-      if (!membership) {
-        // User confirmed email but setup-account never ran — redirect to register to complete setup
-        toast.error("Account setup incomplete. Please register again.");
-        await supabase.auth.signOut();
-        setLoading(false);
-        return;
-      }
-
-      // Hard navigate so middleware picks up fresh cookies
       window.location.href = "/dashboard";
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Login failed");
