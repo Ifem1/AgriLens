@@ -86,7 +86,13 @@ export default function RegisterPage() {
         },
       );
 
-      if (setupError) throw new Error(setupError.message ?? "Account setup failed");
+      if (setupError) {
+        // Try to get real error from response
+        const errMsg = typeof setupData === "object" && setupData?.error
+          ? setupData.error
+          : setupError.message ?? "Account setup failed";
+        throw new Error(errMsg);
+      }
 
       toast.success(
         `Account created! Wallet: ${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`,
