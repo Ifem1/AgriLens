@@ -9,25 +9,24 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll();
+        get(name: string) {
+          return request.cookies.get(name)?.value;
         },
-        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+        set(name: string, value: string, options: CookieOptions) {
+          request.cookies.set({ name, value, ...options });
           supabaseResponse = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
+          supabaseResponse.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: CookieOptions) {
+          request.cookies.set({ name, value: "", ...options });
+          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse.cookies.set({ name, value: "", ...options });
         },
       },
     }
   );
 
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-  console.log("Middleware:", request.nextUrl.pathname, "user:", user?.id ?? "NONE", "error:", userError?.message ?? "none", "cookies:", request.cookies.getAll().map(c => c.name).join(", "));
+  const { data: { user } } = await supabase.auth.getUser();
 
   const protectedPaths = ["/dashboard", "/validations", "/agents", "/policies", "/audit", "/analytics", "/settings", "/admin", "/consensus", "/escalations", "/community"];
   const isProtected = protectedPaths.some((p) => request.nextUrl.pathname.startsWith(p));
