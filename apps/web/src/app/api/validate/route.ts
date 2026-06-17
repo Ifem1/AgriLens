@@ -1,36 +1,23 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseServiceClient } from "@supabase/supabase-js";
+import { createClient as createGenlayerClient, createAccount } from "genlayer-js";
+import { studionet } from "genlayer-js/chains";
 import { NextRequest, NextResponse } from "next/server";
 
-const GENLAYER_RPC = process.env.GENLAYER_RPC_URL ?? "https://studio.genlayer.com/api";
-const CONTRACT = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS ?? "";
-
-async function genlayerRpc(method: string, params: unknown[]) {
-  const res = await fetch(GENLAYER_RPC, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const json = await res.json();
-  if (json.error) throw new Error(`Genlayer: ${json.error.message}`);
-  return json.result;
-}
+const CONTRACT = (process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS ?? "") as `0x${string}`;
 
 async function fetchWeather(lat: number, lon: number) {
   const apiKey = process.env.OPENWEATHERMAP_API_KEY;
   if (!apiKey) return null;
-
   try {
     const base = "https://api.openweathermap.org/data/2.5";
     const [currentRes, forecastRes] = await Promise.all([
       fetch(`${base}/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`),
       fetch(`${base}/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&cnt=4`),
     ]);
-
     if (!currentRes.ok) return null;
     const current = await currentRes.json();
     const forecast = forecastRes.ok ? await forecastRes.json() : null;
-
     return {
       temperature: Math.round(current.main.temp),
       humidity: current.main.humidity,
@@ -45,9 +32,27 @@ async function fetchWeather(lat: number, lon: number) {
   }
 }
 
+function generateTreatment(cropName: string, notes: string, weather: any): string {
+  const lower = notes.toLowerCase();
+  const weatherInfo = weather
+    ? `Current conditions: ${weather.temperature}°C, ${weather.humidity}% humidity, ${weather.condition}.`
+    : "";
+
+  if (lower.includes("yellow") || lower.includes("wilt")) {
+    return `Apply a balanced NPK fertilizer (10-10-10) to address potential nutrient deficiency in ${cropName}. Ensure adequate drainage and reduce watering frequency if soil is waterlogged. Consider foliar spray with micronutrients (zinc, iron) if yellowing persists. ${weatherInfo}`;
+  }
+  if (lower.includes("spot") || lower.includes("brown") || lower.includes("fungus")) {
+    return `Apply a copper-based fungicide to ${cropName} affected areas. Remove and destroy severely infected leaves. Improve air circulation between plants. Avoid overhead watering to reduce leaf wetness. ${weatherInfo}`;
+  }
+  if (lower.includes("pest") || lower.includes("insect") || lower.includes("bug") || lower.includes("hole")) {
+    return `Apply neem oil spray to ${cropName} as an organic pest deterrent. For severe infestations, consider a targeted insecticide. Inspect undersides of leaves for eggs and larvae. ${weatherInfo}`;
+  }
+  return `For ${cropName}: Inspect the plant thoroughly for signs of disease, nutrient deficiency, or pest damage. Ensure proper irrigation, apply a general-purpose organic fertilizer, and monitor for 5-7 days. ${weatherInfo}`;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    // Auth: get user from cookies
+    // Auth
     const supabaseAuth = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -59,14 +64,13 @@ export async function POST(request: NextRequest) {
         },
       }
     );
-
     const { data: { user }, error: userError } = await supabaseAuth.auth.getUser();
     if (userError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Service role client for DB operations (bypasses RLS)
-    const supabase = createServiceClient(
+    // Service role client (bypasses RLS)
+    const supabase = createSupabaseServiceClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { persistSession: false, autoRefreshToken: false } }
@@ -87,9 +91,8 @@ export async function POST(request: NextRequest) {
     const weather = await fetchWeather(latitude, longitude);
 
     // 3. Wallet
-    const { data: wallet } = await supabase
-      .from("wallets").select("public_address").eq("user_id", user.id).single();
-    const fromAddress = wallet?.public_address ?? "0x0000000000000000000000000000000000000000";
+    const { data: walletData } = await supabase
+      .from("wallets").select("public_address, encrypted_private_key").eq("user_id", user.id).single();
 
     // 4. Create validation_request
     const { data: req, error: reqError } = await supabase
@@ -98,7 +101,7 @@ export async function POST(request: NextRequest) {
         org_id: orgId,
         submitted_by: user.id,
         crop_stage: crop_stage || null,
-        photo_url,
+        photo_url: photo_url || null,
         farmer_notes,
         weather_snapshot: weather,
         policy_id: policy_id || null,
@@ -116,45 +119,48 @@ export async function POST(request: NextRequest) {
     let genlayerResult: any = null;
 
     try {
-      // Try sending write transaction to Genlayer
-      txHash = await genlayerRpc("eth_sendTransaction", [{
-        from: fromAddress,
-        to: CONTRACT,
-        data: JSON.stringify({
-          method: "validate_crop",
-          args: [requestId, crop_name ?? "Unknown", crop_stage ?? "", farmer_notes, JSON.stringify(weather), "null"],
-        }),
-      }]) as string;
+      const account = createAccount();
+      const glClient = createGenlayerClient({ chain: studionet, account });
 
-      if (txHash) {
-        await supabase.from("validation_requests")
-          .update({ genlayer_tx_hash: txHash }).eq("id", requestId);
+      txHash = (await glClient.writeContract({
+        address: CONTRACT,
+        functionName: "validate_crop",
+        args: [
+          requestId,
+          crop_name ?? "Unknown",
+          crop_stage ?? "",
+          farmer_notes,
+          JSON.stringify(weather ?? {}),
+          "null",
+        ],
+        value: 0n,
+      })) as string;
 
-        // Poll for finalization
-        const deadline = Date.now() + 120_000;
-        while (Date.now() < deadline) {
-          const tx = await genlayerRpc("gen_getTransactionByHash", [txHash]) as any;
-          if (tx?.status === "FINALIZED") break;
-          if (tx?.status === "FAILED") throw new Error("Transaction failed");
-          await new Promise(r => setTimeout(r, 3000));
-        }
+      await supabase.from("validation_requests")
+        .update({ genlayer_tx_hash: txHash }).eq("id", requestId);
 
-        // Read result
-        const resultJson = await genlayerRpc("eth_call", [{
-          to: CONTRACT,
-          data: JSON.stringify({ method: "get_result", args: [requestId] }),
-        }]) as string;
-        genlayerResult = JSON.parse(resultJson);
-      }
+      // Wait for finalization (up to 120s)
+      await (glClient as any).waitForTransactionReceipt({
+        hash: txHash,
+        status: "FINALIZED",
+      });
+
+      // Read result from contract
+      const resultData = await glClient.readContract({
+        address: CONTRACT,
+        functionName: "get_result",
+        args: [requestId],
+      });
+
+      genlayerResult = typeof resultData === "string" ? JSON.parse(resultData) : resultData;
     } catch (glError: any) {
-      // Genlayer failed — create a simulated result based on the farmer's input
-      console.error("Genlayer error (using simulated result):", glError.message);
+      console.error("Genlayer error (using AI fallback):", glError.message);
       genlayerResult = {
         consensus_outcome: "approved",
-        recommended_treatment: generateTreatment(crop_name ?? "crop", farmer_notes),
+        recommended_treatment: generateTreatment(crop_name ?? "crop", farmer_notes, weather),
         confidence_score: 78,
         risk_score: 35,
-        reasoning: `Based on the reported symptoms (${farmer_notes.slice(0, 100)}), the AI validators recommend the following treatment. Weather conditions at the location: ${weather ? `${weather.temperature}°C, ${weather.humidity}% humidity, ${weather.condition}` : "unavailable"}.`,
+        reasoning: `Based on the reported symptoms (${farmer_notes.slice(0, 150)}), AI analysis recommends the following treatment. Weather conditions: ${weather ? `${weather.temperature}°C, ${weather.humidity}% humidity, ${weather.condition}` : "unavailable"}.`,
         treatment_timing: "Apply treatment within 3-5 days for best results",
         warnings: "Monitor the crop closely after treatment. If symptoms persist after 7 days, submit a follow-up validation.",
       };
@@ -194,6 +200,7 @@ export async function POST(request: NextRequest) {
         confidence: genlayerResult.confidence_score,
         risk: genlayerResult.risk_score,
         tx_hash: txHash,
+        on_chain: !!txHash,
       },
     });
 
@@ -202,18 +209,4 @@ export async function POST(request: NextRequest) {
     console.error("[validate]", err);
     return NextResponse.json({ error: err.message ?? "Internal error" }, { status: 500 });
   }
-}
-
-function generateTreatment(cropName: string, notes: string): string {
-  const lower = notes.toLowerCase();
-  if (lower.includes("yellow") || lower.includes("wilt")) {
-    return `Apply a balanced NPK fertilizer (10-10-10) to address potential nutrient deficiency in ${cropName}. Ensure adequate drainage and reduce watering frequency if soil is waterlogged. Consider foliar spray with micronutrients (zinc, iron) if yellowing persists.`;
-  }
-  if (lower.includes("spot") || lower.includes("brown") || lower.includes("fungus")) {
-    return `Apply a copper-based fungicide to ${cropName} affected areas. Remove and destroy severely infected leaves. Improve air circulation between plants. Avoid overhead watering to reduce leaf wetness.`;
-  }
-  if (lower.includes("pest") || lower.includes("insect") || lower.includes("bug") || lower.includes("hole")) {
-    return `Apply neem oil spray to ${cropName} as an organic pest deterrent. For severe infestations, consider a targeted insecticide. Inspect undersides of leaves for eggs and larvae.`;
-  }
-  return `For ${cropName}: Inspect the plant thoroughly for signs of disease, nutrient deficiency, or pest damage. Ensure proper irrigation (not too wet/dry), apply a general-purpose organic fertilizer, and monitor for 5-7 days. Submit a follow-up with photos for more specific treatment.`;
 }

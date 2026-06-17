@@ -132,6 +132,7 @@ serve(async (req: Request) => {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      { auth: { persistSession: false, autoRefreshToken: false } },
     );
 
     const { data: { user }, error: userError } = await supabase.auth.getUser(
@@ -140,16 +141,20 @@ serve(async (req: Request) => {
     if (userError || !user) return respond({ error: "Invalid token" }, 401);
 
     const body = await req.json() as {
-      crop_id: string;
+      crop_name?: string;
+      crop_id?: string;
       crop_stage: string;
       farmer_notes: string;
       photo_url: string | null;
       policy_id: string | null;
       latitude: number;
       longitude: number;
+      org_id?: string;
+      visibility?: string;
+      is_paid?: boolean;
     };
 
-    const { crop_id, crop_stage, farmer_notes, photo_url, policy_id, latitude, longitude } = body;
+    const { crop_name, crop_id, crop_stage, farmer_notes, photo_url, policy_id, latitude, longitude, visibility, is_paid } = body;
 
     // ── 1. Get caller's org ──────────────────────────────────────────────────
     const { data: membership } = await supabase
@@ -174,13 +179,16 @@ serve(async (req: Request) => {
     // ── 3. Fetch live weather ────────────────────────────────────────────────
     const weather = await fetchWeather(latitude, longitude);
 
-    // ── 4. Fetch crop name ───────────────────────────────────────────────────
-    const { data: crop } = await supabase
-      .from("crops")
-      .select("name")
-      .eq("id", crop_id)
-      .single();
-    const cropName = crop?.name ?? "Unknown crop";
+    // ── 4. Resolve crop name ───────────────────────────────────────────────────
+    let cropName = crop_name ?? "Unknown crop";
+    if (!crop_name && crop_id) {
+      const { data: crop } = await supabase
+        .from("crops")
+        .select("name")
+        .eq("id", crop_id)
+        .single();
+      cropName = crop?.name ?? "Unknown crop";
+    }
 
     // ── 5. Fetch policy rules ────────────────────────────────────────────────
     let policyRulesJson = "null";
@@ -209,13 +217,15 @@ serve(async (req: Request) => {
       .insert({
         org_id: orgId,
         submitted_by: user.id,
-        crop_id,
+        crop_id: crop_id || null,
         crop_stage,
         photo_url,
         farmer_notes,
         weather_snapshot: weather,
         policy_id,
         status: "validating",
+        visibility: visibility ?? "public",
+        is_paid: is_paid ?? false,
       })
       .select()
       .single();

@@ -106,6 +106,18 @@ export default function NewValidationPage() {
         orgId = membership.org_id;
       }
 
+      let photoUrl: string | null = null;
+      if (photo) {
+        const ext = photo.name.split(".").pop() ?? "jpg";
+        const path = `${orgId}/${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from("farmer-photos")
+          .upload(path, photo, { contentType: photo.type });
+        if (uploadErr) throw new Error("Photo upload failed: " + uploadErr.message);
+        const { data: urlData } = supabase.storage.from("farmer-photos").getPublicUrl(path);
+        photoUrl = urlData.publicUrl;
+      }
+
       const res = await fetch("/api/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,7 +125,7 @@ export default function NewValidationPage() {
           crop_name: cropName,
           crop_stage: cropStage,
           farmer_notes: notes,
-          photo_url: null,
+          photo_url: photoUrl,
           policy_id: policyId || null,
           latitude: parseFloat(latitude),
           longitude: parseFloat(longitude),
