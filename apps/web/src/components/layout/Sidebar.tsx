@@ -6,12 +6,13 @@ import { cn } from "@/lib/utils/cn";
 import { Logo } from "@/components/ui/Logo";
 import {
   LayoutDashboard, ShieldCheck, Bot, FileText, ScrollText,
-  BarChart3, AlertTriangle, Settings, Building2,
+  BarChart3, AlertTriangle, Settings, Building2, Globe,
 } from "lucide-react";
 
 const nav = [
   { href: "/dashboard",   label: "Dashboard",     icon: LayoutDashboard },
   { href: "/validations", label: "Validations",   icon: ShieldCheck },
+  { href: "/community",   label: "Community",     icon: Globe },
   { href: "/agents",      label: "Agents",        icon: Bot },
   { href: "/policies",    label: "Policies",      icon: FileText },
   { href: "/audit",       label: "Audit Trail",   icon: ScrollText },

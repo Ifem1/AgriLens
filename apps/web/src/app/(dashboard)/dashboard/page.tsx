@@ -81,19 +81,16 @@ export default function DashboardPage() {
   }, [org]);
 
   const statCards = [
-    { label: "Total Validations", value: stats?.totalValidations ?? 0, icon: ShieldCheck, color: "text-green-400" },
-    { label: "Approved", value: stats?.approved ?? 0, icon: TrendingUp, color: "text-blue-400" },
-    { label: "Escalated", value: stats?.escalated ?? 0, icon: AlertTriangle, color: "text-orange-400" },
-    { label: "Avg Confidence", value: `${stats?.avgConfidence ?? 0}%`, icon: Activity, color: "text-purple-400" },
+    { label: "Total Validations", value: stats?.totalValidations ?? 0, icon: ShieldCheck, color: "#8686AC" },
+    { label: "Approved", value: stats?.approved ?? 0, icon: TrendingUp, color: "#60a5fa" },
+    { label: "Escalated", value: stats?.escalated ?? 0, icon: AlertTriangle, color: "#fb923c" },
+    { label: "Avg Confidence", value: `${stats?.avgConfidence ?? 0}%`, icon: Activity, color: "#a78bfa" },
   ];
 
   const statusBadge = (status: string) => {
     const map: Record<string, "success" | "warning" | "danger" | "info" | "escalated"> = {
-      approved: "success",
-      pending: "info",
-      validating: "info",
-      failed: "danger",
-      escalated: "escalated",
+      approved: "success", pending: "info", validating: "info",
+      failed: "danger", escalated: "escalated",
     };
     return <Badge variant={map[status] ?? "neutral"}>{status}</Badge>;
   };
@@ -102,11 +99,10 @@ export default function DashboardPage() {
     <>
       <TopNav title="Dashboard" />
       <div className="p-6 space-y-6">
-        {/* Quick action */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-white">Overview</h2>
-            <p className="text-sm text-zinc-500">Your organization's validation activity</p>
+            <h2 className="text-lg font-semibold" style={{ color: "var(--al-text)" }}>Overview</h2>
+            <p className="text-sm" style={{ color: "var(--al-sec)" }}>Your organization&apos;s validation activity</p>
           </div>
           <Link href="/validations/new">
             <Button size="sm">
@@ -116,89 +112,94 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {statCards.map(({ label, value, icon: Icon, color }) => (
-            <Card key={label}>
-              <CardContent className="flex items-center gap-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5">
-                  <Icon className={`h-5 w-5 ${color}`} />
-                </div>
-                <div>
-                  <p className="text-xs text-zinc-500">{label}</p>
-                  {loading ? (
-                    <Skeleton className="h-6 w-16 mt-1" />
-                  ) : (
-                    <p className="text-xl font-bold text-white">{value}</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <div
+              key={label}
+              className="rounded-xl p-4 flex items-center gap-4"
+              style={{ background: "var(--al-card)", border: "1px solid var(--al-border)" }}
+            >
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+                style={{ background: "rgba(80,80,129,0.15)" }}
+              >
+                <Icon className="h-5 w-5" style={{ color }} />
+              </div>
+              <div>
+                <p className="text-xs" style={{ color: "var(--al-sec)" }}>{label}</p>
+                {loading ? (
+                  <Skeleton className="h-6 w-16 mt-1" />
+                ) : (
+                  <p className="text-xl font-bold" style={{ color: "var(--al-text)" }}>{value}</p>
+                )}
+              </div>
+            </div>
           ))}
         </div>
 
-        {/* Subscription usage */}
         {org && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Plan Usage</CardTitle>
+          <div
+            className="rounded-xl p-5"
+            style={{ background: "var(--al-card)", border: "1px solid var(--al-border)" }}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-sm font-semibold" style={{ color: "var(--al-text)" }}>Plan Usage</p>
               <Badge variant="success">{org.plan_tier}</Badge>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between text-sm mb-2">
-                <span className="text-zinc-400">Validations this period</span>
-                <span className="text-white">{stats?.totalValidations ?? 0} / 20</span>
-              </div>
-              <Progress value={((stats?.totalValidations ?? 0) / 20) * 100} />
-            </CardContent>
-          </Card>
+            </div>
+            <div className="flex items-center justify-between text-sm mb-2">
+              <span style={{ color: "var(--al-sec)" }}>Validations this period</span>
+              <span style={{ color: "var(--al-text)" }}>{stats?.totalValidations ?? 0} / 20</span>
+            </div>
+            <Progress value={((stats?.totalValidations ?? 0) / 20) * 100} />
+          </div>
         )}
 
-        {/* Recent validations */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Validations</CardTitle>
+        <div
+          className="rounded-xl p-5"
+          style={{ background: "var(--al-card)", border: "1px solid var(--al-border)" }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-semibold" style={{ color: "var(--al-text)" }}>Recent Validations</p>
             <Link href="/validations">
               <Button variant="ghost" size="sm">
                 View all <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </Link>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-14 w-full" />
-                ))}
-              </div>
-            ) : recentValidations.length === 0 ? (
-              <div className="py-10 text-center">
-                <p className="text-sm text-zinc-500">No validations yet</p>
-                <Link href="/validations/new">
-                  <Button variant="outline" size="sm" className="mt-3">
-                    Submit your first
-                  </Button>
+          </div>
+          {loading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full" />
+              ))}
+            </div>
+          ) : recentValidations.length === 0 ? (
+            <div className="py-10 text-center">
+              <p className="text-sm" style={{ color: "var(--al-sec)" }}>No validations yet</p>
+              <Link href="/validations/new">
+                <Button variant="outline" size="sm" className="mt-3">
+                  Submit your first
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {recentValidations.map((v) => (
+                <Link
+                  key={v.id}
+                  href={`/validations/${v.id}`}
+                  className="flex items-center justify-between rounded-lg px-4 py-3 transition-colors"
+                  style={{ border: "1px solid var(--al-border)" }}
+                >
+                  <div>
+                    <p className="text-sm" style={{ color: "var(--al-text)" }}>{v.farmer_notes?.slice(0, 60) || "No notes"}</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--al-muted)" }}>Stage: {v.crop_stage}</p>
+                  </div>
+                  {statusBadge(v.status)}
                 </Link>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {recentValidations.map((v) => (
-                  <Link
-                    key={v.id}
-                    href={`/validations/${v.id}`}
-                    className="flex items-center justify-between rounded-lg border border-[#1a2e1a] px-4 py-3 hover:bg-white/5 transition-colors"
-                  >
-                    <div>
-                      <p className="text-sm text-white">{v.farmer_notes?.slice(0, 60) || "No notes"}</p>
-                      <p className="text-xs text-zinc-600 mt-0.5">Stage: {v.crop_stage}</p>
-                    </div>
-                    {statusBadge(v.status)}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

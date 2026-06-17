@@ -4,15 +4,31 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuthStore } from "@/stores/authStore";
 import { TopNav } from "@/components/layout/TopNav";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { decryptPrivateKey } from "@/lib/wallet/encrypt";
 import { Wallet, Copy, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+
+const fieldStyle = {
+  background: "var(--al-bg)",
+  border: "1px solid var(--al-border)",
+  color: "var(--al-text)",
+  borderRadius: "0.5rem",
+  padding: "0.625rem 0.75rem",
+  fontSize: "0.875rem",
+  width: "100%",
+  outline: "none",
+};
+
+const cardStyle = {
+  background: "var(--al-card)",
+  border: "1px solid var(--al-border)",
+  borderRadius: "0.75rem",
+  padding: "1.25rem",
+};
 
 export default function WalletPage() {
   const { user } = useAuthStore();
@@ -65,73 +81,70 @@ export default function WalletPage() {
     <>
       <TopNav title="Wallet" />
       <div className="p-6 space-y-6 max-w-2xl">
-        <Link href="/settings" className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
+        <Link href="/settings" className="inline-flex items-center gap-1 text-sm transition-colors" style={{ color: "var(--al-sec)" }}>
           <ArrowLeft className="h-3.5 w-3.5" /> Back to settings
         </Link>
 
-        <h2 className="text-lg font-semibold text-white">Blockchain Wallet</h2>
+        <h2 className="text-lg font-semibold" style={{ color: "var(--al-text)" }}>Blockchain Wallet</h2>
 
         {loading ? (
           <Skeleton className="h-40 w-full" />
         ) : !publicAddress ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Wallet className="h-10 w-10 text-zinc-700 mx-auto mb-3" />
-              <p className="text-sm text-zinc-500">No wallet found</p>
-            </CardContent>
-          </Card>
+          <div className="rounded-xl py-12 text-center" style={{ background: "var(--al-card)", border: "1px solid var(--al-border)" }}>
+            <Wallet className="h-10 w-10 mx-auto mb-3" style={{ color: "var(--al-muted)" }} />
+            <p className="text-sm" style={{ color: "var(--al-sec)" }}>No wallet found</p>
+          </div>
         ) : (
           <>
-            <Card>
-              <CardHeader>
-                <CardTitle>Public Address</CardTitle>
+            <div style={cardStyle}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold" style={{ color: "var(--al-text)" }}>Public Address</p>
                 <Button variant="ghost" size="sm" onClick={copyAddress}>
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
-              </CardHeader>
-              <CardContent>
-                <code className="text-sm text-green-400 font-mono break-all">{publicAddress}</code>
-              </CardContent>
-            </Card>
+              </div>
+              <code className="text-sm font-mono break-all" style={{ color: "#8686AC" }}>{publicAddress}</code>
+            </div>
 
-            <Card className="border-orange-500/20">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Eye className="h-4 w-4 text-orange-400" />
+            <div style={{ ...cardStyle, border: "1px solid #505081" }}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--al-text)" }}>
+                  <Eye className="h-4 w-4" style={{ color: "#fb923c" }} />
                   Export Private Key
-                </CardTitle>
-                <Badge variant="warning">Sensitive</Badge>
-              </CardHeader>
-              <CardContent>
-                <p className="text-xs text-zinc-500 mb-4">
-                  Your private key is encrypted with your password. Enter it to reveal the key.
-                  Never share your private key with anyone.
                 </p>
-                {revealedKey ? (
-                  <div className="space-y-3">
-                    <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-3">
-                      <code className="text-sm text-orange-300 font-mono break-all">{revealedKey}</code>
-                    </div>
-                    <Button variant="secondary" size="sm" onClick={() => { setRevealedKey(null); setPassword(""); }}>
-                      <EyeOff className="h-3.5 w-3.5" /> Hide
-                    </Button>
+                <Badge variant="warning">Sensitive</Badge>
+              </div>
+              <p className="text-xs mb-4" style={{ color: "var(--al-sec)" }}>
+                Your private key is encrypted with your password. Enter it to reveal the key.
+                Never share your private key with anyone.
+              </p>
+              {revealedKey ? (
+                <div className="space-y-3">
+                  <div
+                    className="rounded-lg p-3"
+                    style={{ background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.25)" }}
+                  >
+                    <code className="text-sm font-mono break-all" style={{ color: "#fb923c" }}>{revealedKey}</code>
                   </div>
-                ) : (
-                  <form onSubmit={handleReveal} className="flex gap-2">
-                    <Input
-                      id="wallet-password"
-                      type="password"
-                      placeholder="Enter your account password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      className="flex-1"
-                    />
-                    <Button type="submit" variant="outline" loading={revealing}>Reveal</Button>
-                  </form>
-                )}
-              </CardContent>
-            </Card>
+                  <Button variant="secondary" size="sm" onClick={() => { setRevealedKey(null); setPassword(""); }}>
+                    <EyeOff className="h-3.5 w-3.5" /> Hide
+                  </Button>
+                </div>
+              ) : (
+                <form onSubmit={handleReveal} className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder="Enter your account password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="flex-1"
+                    style={fieldStyle}
+                  />
+                  <Button type="submit" variant="outline" loading={revealing}>Reveal</Button>
+                </form>
+              )}
+            </div>
           </>
         )}
       </div>

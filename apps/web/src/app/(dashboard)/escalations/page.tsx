@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useOrgStore } from "@/stores/orgStore";
 import { TopNav } from "@/components/layout/TopNav";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -60,53 +59,56 @@ export default function EscalationsPage() {
     <>
       <TopNav title="Escalations" />
       <div className="p-6 space-y-4 max-w-3xl">
-        <h2 className="text-lg font-semibold text-white">Human Escalations</h2>
-        <p className="text-sm text-zinc-500">Low-confidence validations that need human review</p>
+        <h2 className="text-lg font-semibold" style={{ color: "var(--al-text)" }}>Human Escalations</h2>
+        <p className="text-sm" style={{ color: "var(--al-sec)" }}>Low-confidence validations that need human review</p>
 
         {loading ? (
           <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
         ) : escalations.length === 0 ? (
-          <Card>
-            <CardContent className="py-16 text-center">
-              <CheckCircle className="h-10 w-10 text-green-500/50 mx-auto mb-3" />
-              <p className="text-sm text-zinc-500">No pending escalations</p>
-            </CardContent>
-          </Card>
+          <div className="rounded-xl py-16 text-center" style={{ background: "var(--al-card)", border: "1px solid var(--al-border)" }}>
+            <CheckCircle className="h-10 w-10 mx-auto mb-3" style={{ color: "var(--al-muted)" }} />
+            <p className="text-sm" style={{ color: "var(--al-sec)" }}>No pending escalations</p>
+          </div>
         ) : (
           <div className="space-y-2">
             {escalations.map((e) => (
-              <Card key={e.id} className={e.resolved_at ? "" : "border-orange-500/20"}>
-                <CardContent>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <AlertTriangle className="h-3.5 w-3.5 text-orange-400" />
-                        <Badge variant={e.resolved_at ? "success" : "escalated"}>
-                          {e.resolved_at ? "Resolved" : "Pending"}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-white">{e.reason || "Low consensus confidence"}</p>
-                      {e.validation_requests?.farmer_notes && (
-                        <p className="text-xs text-zinc-500 mt-1">{e.validation_requests.farmer_notes.slice(0, 80)}</p>
-                      )}
-                      {e.resolution && (
-                        <p className="text-xs text-green-400/70 mt-2">Resolution: {e.resolution}</p>
-                      )}
-                      <p className="text-xs text-zinc-700 mt-1">{formatRelative(e.created_at)}</p>
+              <div
+                key={e.id}
+                className="rounded-xl p-4"
+                style={{
+                  background: "var(--al-card)",
+                  border: `1px solid ${e.resolved_at ? "var(--al-border)" : "#505081"}`,
+                }}
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertTriangle className="h-3.5 w-3.5" style={{ color: "#fb923c" }} />
+                      <Badge variant={e.resolved_at ? "success" : "escalated"}>
+                        {e.resolved_at ? "Resolved" : "Pending"}
+                      </Badge>
                     </div>
-                    {!e.resolved_at && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleResolve(e.id)}
-                        loading={resolving === e.id}
-                      >
-                        Resolve
-                      </Button>
+                    <p className="text-sm" style={{ color: "var(--al-text)" }}>{e.reason || "Low consensus confidence"}</p>
+                    {e.validation_requests?.farmer_notes && (
+                      <p className="text-xs mt-1" style={{ color: "var(--al-sec)" }}>{e.validation_requests.farmer_notes.slice(0, 80)}</p>
                     )}
+                    {e.resolution && (
+                      <p className="text-xs mt-2" style={{ color: "#8686AC" }}>Resolution: {e.resolution}</p>
+                    )}
+                    <p className="text-xs mt-1" style={{ color: "var(--al-muted)" }}>{formatRelative(e.created_at)}</p>
                   </div>
-                </CardContent>
-              </Card>
+                  {!e.resolved_at && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleResolve(e.id)}
+                      loading={resolving === e.id}
+                    >
+                      Resolve
+                    </Button>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         )}

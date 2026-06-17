@@ -1,13 +1,19 @@
 "use client";
 
 import { TopNav } from "@/components/layout/TopNav";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/authStore";
 import { useOrgStore } from "@/stores/orgStore";
 import { Settings, Wallet, Building2 } from "lucide-react";
 import Link from "next/link";
+
+const cardStyle = {
+  background: "var(--al-card)",
+  border: "1px solid var(--al-border)",
+  borderRadius: "0.75rem",
+  padding: "1.25rem",
+};
 
 export default function SettingsPage() {
   const { user } = useAuthStore();
@@ -17,70 +23,59 @@ export default function SettingsPage() {
     <>
       <TopNav title="Settings" />
       <div className="p-6 space-y-6 max-w-2xl">
-        <h2 className="text-lg font-semibold text-white">Account Settings</h2>
+        <h2 className="text-lg font-semibold" style={{ color: "var(--al-text)" }}>Account Settings</h2>
 
-        {/* Profile */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-4 w-4 text-green-400" />
-              Profile
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <div style={cardStyle}>
+          <p className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--al-text)" }}>
+            <Settings className="h-4 w-4" style={{ color: "#8686AC" }} />
+            Profile
+          </p>
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-400">Email</span>
-              <span className="text-sm text-white">{user?.email}</span>
+              <span className="text-sm" style={{ color: "var(--al-sec)" }}>Email</span>
+              <span className="text-sm" style={{ color: "var(--al-text)" }}>{user?.email}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-400">Role</span>
+              <span className="text-sm" style={{ color: "var(--al-sec)" }}>Role</span>
               <Badge variant="info">{membership?.role ?? "—"}</Badge>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Organization */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-green-400" />
-              Organization
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <div style={cardStyle}>
+          <p className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--al-text)" }}>
+            <Building2 className="h-4 w-4" style={{ color: "#8686AC" }} />
+            Organization
+          </p>
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-400">Name</span>
-              <span className="text-sm text-white">{org?.name ?? "—"}</span>
+              <span className="text-sm" style={{ color: "var(--al-sec)" }}>Name</span>
+              <span className="text-sm" style={{ color: "var(--al-text)" }}>{org?.name ?? "—"}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-400">Plan</span>
+              <span className="text-sm" style={{ color: "var(--al-sec)" }}>Plan</span>
               <Badge variant="success">{org?.plan_tier ?? "—"}</Badge>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-400">Region</span>
-              <span className="text-sm text-white">{org?.region ?? "Not set"}</span>
+              <span className="text-sm" style={{ color: "var(--al-sec)" }}>Region</span>
+              <span className="text-sm" style={{ color: "var(--al-text)" }}>{org?.region ?? "Not set"}</span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Wallet */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Wallet className="h-4 w-4 text-green-400" />
-              Blockchain Wallet
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-zinc-500 mb-4">
-              Your wallet was automatically generated when you created your account.
-              It is used to sign Genlayer transactions.
-            </p>
-            <Link href="/settings/wallet">
-              <Button variant="secondary" size="sm">Manage Wallet</Button>
-            </Link>
-          </CardContent>
-        </Card>
+        <div style={cardStyle}>
+          <p className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--al-text)" }}>
+            <Wallet className="h-4 w-4" style={{ color: "#8686AC" }} />
+            Blockchain Wallet
+          </p>
+          <p className="text-sm mb-4" style={{ color: "var(--al-sec)" }}>
+            Your wallet was automatically generated when you created your account.
+            It is used to sign Genlayer transactions.
+          </p>
+          <Link href="/settings/wallet">
+            <Button variant="secondary" size="sm">Manage Wallet</Button>
+          </Link>
+        </div>
       </div>
     </>
   );
