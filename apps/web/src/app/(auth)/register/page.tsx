@@ -35,6 +35,14 @@ export default function RegisterPage() {
       if (authError) throw new Error(authError.message);
       if (!authData.user) throw new Error("Registration failed — no user returned");
 
+      // If email confirmation is required, session may be null
+      const session = authData.session;
+      if (!session) {
+        toast.success("Check your email to confirm your account, then sign in.");
+        router.push("/login");
+        return;
+      }
+
       // 2. Generate blockchain wallet client-side
       const wallet = await generateWallet();
 
