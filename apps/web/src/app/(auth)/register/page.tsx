@@ -67,7 +67,7 @@ export default function RegisterPage() {
       toast.success(
         `Account created! Wallet: ${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`,
       );
-      router.push("/dashboard");
+      window.location.href = "/dashboard";
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Registration failed");
       setLoading(false);

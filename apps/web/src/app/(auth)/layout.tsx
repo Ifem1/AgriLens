@@ -27,7 +27,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <span className="text-gradient">powered by consensus</span>
           </h2>
           <p className="text-sm max-w-sm" style={{ color: "var(--al-sec)" }}>
-            Decentralized AI validators analyze farmer evidence — photos, notes, and weather —
+            Decentralized AI validators analyze farmer evidence, photos, notes, and weather
             to recommend treatments that fit real-world conditions.
           </p>
         </div>
