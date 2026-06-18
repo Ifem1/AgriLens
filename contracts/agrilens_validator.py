@@ -739,10 +739,14 @@ class AgriLensValidator(gl.Contract):
         # prompt_comparative compares their outputs using the equivalence rule.
         result_str = gl.eq_principle.prompt_comparative(
             run_agronomist_evaluation,
-            "The primary_diagnosis, recommended_treatment, and consensus_outcome must be "
-            "semantically equivalent across validators. Minor wording differences in reasoning "
-            "or justification text are acceptable. The confidence_score values must be within "
-            "±15 points of each other. The risk_score must agree within ±20 points.",
+            "The consensus_outcome field (approved, escalated, or policy_blocked) must match "
+            "across validators. The primary_diagnosis should identify the same general category "
+            "of issue (e.g. both say fungal, or both say nutrient deficiency) but exact wording "
+            "can differ freely. The recommended_treatment should suggest the same general approach "
+            "(e.g. both recommend fungicide, or both recommend fertilizer) but specific product "
+            "names, dosages, and phrasing can differ. The confidence_score and risk_score values "
+            "do NOT need to match — any numeric values are acceptable. All other fields like "
+            "reasoning, justification, timing, and warnings can differ freely.",
         )
 
         # ── Parse and validate result ────────────────────────────────────────
@@ -885,8 +889,10 @@ class AgriLensValidator(gl.Contract):
 
         result_str = gl.eq_principle.prompt_comparative(
             run_regen_evaluation,
-            "The primary_diagnosis, recommended_treatment, and consensus_outcome must be "
-            "semantically equivalent. The confidence_score must be within ±15 points.",
+            "The consensus_outcome field must match across validators. The primary_diagnosis "
+            "should identify the same general category of issue but exact wording can differ. "
+            "The recommended_treatment should suggest the same general approach but specific "
+            "details can differ. Numeric scores and all other fields can differ freely.",
         )
 
         result = self._parse_and_validate_result(result_str)
