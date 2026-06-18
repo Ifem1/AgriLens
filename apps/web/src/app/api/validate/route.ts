@@ -119,13 +119,19 @@ export async function POST(request: NextRequest) {
     let genlayerResult: any = null;
 
     try {
-      const account = signing_key
-        ? createAccount(signing_key as `0x${string}`)
-        : createAccount();
-      const glClient = createGenlayerClient({ chain: studionet, account });
+      // Owner client for admin operations (register org/agent)
+      const ownerKey = process.env.GENLAYER_OWNER_PRIVATE_KEY as `0x${string}` | undefined;
+      const ownerAccount = ownerKey ? createAccount(ownerKey) : createAccount();
+      const ownerClient = createGenlayerClient({ chain: studionet, account: ownerAccount });
 
-      // Ensure org is registered on-chain
-      const isOrgRegistered = await glClient.readContract({
+      // User client for signing the validation tx
+      const userAccount = signing_key
+        ? createAccount(signing_key as `0x${string}`)
+        : ownerAccount;
+      const glClient = createGenlayerClient({ chain: studionet, account: userAccount });
+
+      // Ensure org is registered on-chain (owner-only operation)
+      const isOrgRegistered = await ownerClient.readContract({
         address: CONTRACT,
         functionName: "is_organization_registered",
         args: [orgId],
@@ -133,30 +139,30 @@ export async function POST(request: NextRequest) {
       if (!isOrgRegistered) {
         const { data: orgRow } = await supabase
           .from("organizations").select("name, country, region").eq("id", orgId).single();
-        const regTx = await glClient.writeContract({
+        const regTx = await ownerClient.writeContract({
           address: CONTRACT,
           functionName: "register_organization",
           args: [orgId, orgRow?.name ?? "Farm Org", orgRow?.country ?? "", orgRow?.region ?? "", "free"],
           value: 0n,
         });
-        await (glClient as any).waitForTransactionReceipt({ hash: regTx, status: "FINALIZED" });
+        await (ownerClient as any).waitForTransactionReceipt({ hash: regTx, status: "FINALIZED" });
       }
 
-      // Ensure agent is registered on-chain
+      // Ensure agent is registered on-chain (owner-only operation)
       const agentId = walletData?.public_address ?? "default-agent";
-      const isAgentActive = await glClient.readContract({
+      const isAgentActive = await ownerClient.readContract({
         address: CONTRACT,
         functionName: "is_agent_active",
         args: [agentId],
       }).catch(() => false);
       if (!isAgentActive) {
-        const agentTx = await glClient.writeContract({
+        const agentTx = await ownerClient.writeContract({
           address: CONTRACT,
           functionName: "register_agent",
           args: [agentId, orgId, "Validation Agent", "Auto-registered validation agent"],
           value: 0n,
         });
-        await (glClient as any).waitForTransactionReceipt({ hash: agentTx, status: "FINALIZED" });
+        await (ownerClient as any).waitForTransactionReceipt({ hash: agentTx, status: "FINALIZED" });
       }
 
       txHash = (await glClient.writeContract({
