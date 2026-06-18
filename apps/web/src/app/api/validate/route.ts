@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
           args: [orgId, orgRow?.name ?? "Farm Org", orgRow?.country ?? "", orgRow?.region ?? "", "free"],
           value: 0n,
         });
-        await (ownerClient as any).waitForTransactionReceipt({ hash: regTx, status: "FINALIZED" });
+        await (ownerClient as any).waitForTransactionReceipt({ hash: regTx, status: "ACCEPTED", retries: 40 });
       }
 
       // Ensure agent is registered on-chain (owner-only operation)
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
           args: [agentId, orgId, "Validation Agent", "Auto-registered validation agent"],
           value: 0n,
         });
-        await (ownerClient as any).waitForTransactionReceipt({ hash: agentTx, status: "FINALIZED" });
+        await (ownerClient as any).waitForTransactionReceipt({ hash: agentTx, status: "ACCEPTED", retries: 40 });
       }
 
       txHash = (await glClient.writeContract({
@@ -186,10 +186,10 @@ export async function POST(request: NextRequest) {
       await supabase.from("validation_requests")
         .update({ genlayer_tx_hash: txHash }).eq("id", requestId);
 
-      // Wait for finalization (up to 120s)
       await (glClient as any).waitForTransactionReceipt({
         hash: txHash,
-        status: "FINALIZED",
+        status: "ACCEPTED",
+        retries: 40,
       });
 
       // Read result from contract
