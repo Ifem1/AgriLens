@@ -32,22 +32,17 @@ async function fetchWeather(lat: number, lon: number) {
   }
 }
 
-function generateTreatment(cropName: string, notes: string, weather: any): string {
-  const lower = notes.toLowerCase();
-  const weatherInfo = weather
-    ? `Current conditions: ${weather.temperature}°C, ${weather.humidity}% humidity, ${weather.condition}.`
-    : "";
+function confidenceScoreFromBand(band: string | undefined) {
+  if (band === "high") return 85;
+  if (band === "medium") return 65;
+  return 35;
+}
 
-  if (lower.includes("yellow") || lower.includes("wilt")) {
-    return `Apply a balanced NPK fertilizer (10-10-10) to address potential nutrient deficiency in ${cropName}. Ensure adequate drainage and reduce watering frequency if soil is waterlogged. Consider foliar spray with micronutrients (zinc, iron) if yellowing persists. ${weatherInfo}`;
-  }
-  if (lower.includes("spot") || lower.includes("brown") || lower.includes("fungus")) {
-    return `Apply a copper-based fungicide to ${cropName} affected areas. Remove and destroy severely infected leaves. Improve air circulation between plants. Avoid overhead watering to reduce leaf wetness. ${weatherInfo}`;
-  }
-  if (lower.includes("pest") || lower.includes("insect") || lower.includes("bug") || lower.includes("hole")) {
-    return `Apply neem oil spray to ${cropName} as an organic pest deterrent. For severe infestations, consider a targeted insecticide. Inspect undersides of leaves for eggs and larvae. ${weatherInfo}`;
-  }
-  return `For ${cropName}: Inspect the plant thoroughly for signs of disease, nutrient deficiency, or pest damage. Ensure proper irrigation, apply a general-purpose organic fertilizer, and monitor for 5-7 days. ${weatherInfo}`;
+function riskScoreFromVerdict(verdict: string | undefined, treatmentSafety: string | undefined) {
+  if (verdict === "rejected" || treatmentSafety === "unsafe") return 85;
+  if (verdict === "needs_expert_review" || treatmentSafety === "needs_expert_review") return 70;
+  if (verdict === "insufficient_evidence") return 55;
+  return 30;
 }
 
 export async function POST(request: NextRequest) {
@@ -77,7 +72,26 @@ export async function POST(request: NextRequest) {
     );
 
     const body = await request.json();
-    const { crop_name, crop_stage, farmer_notes, photo_url, policy_id, latitude, longitude, visibility, is_paid, signing_key } = body;
+    const {
+      crop_name,
+      crop_stage,
+      farmer_notes,
+      photo_url,
+      photo_evidence_url,
+      public_evidence_url,
+      weather_source_url,
+      agro_source_url,
+      proposed_treatment,
+      pesticide_name,
+      pesticide_guidance_url,
+      farm_location,
+      policy_id,
+      latitude,
+      longitude,
+      visibility,
+      is_paid,
+      signing_key,
+    } = body;
 
     // 1. Get org
     const { data: membership } = await supabase
@@ -104,6 +118,14 @@ export async function POST(request: NextRequest) {
         photo_url: photo_url || null,
         farmer_notes,
         weather_snapshot: weather,
+        farm_location: farm_location || weather?.location || `${latitude},${longitude}`,
+        public_evidence_url: public_evidence_url || null,
+        photo_evidence_url: photo_evidence_url || photo_url || null,
+        weather_source_url: weather_source_url || null,
+        agro_source_url: agro_source_url || null,
+        proposed_treatment: proposed_treatment || null,
+        pesticide_name: pesticide_name || null,
+        pesticide_guidance_url: pesticide_guidance_url || null,
         policy_id: policy_id || null,
         status: "validating",
         visibility: visibility ?? "public",
@@ -175,7 +197,14 @@ export async function POST(request: NextRequest) {
           crop_name ?? "Unknown",
           crop_stage ?? "",
           farmer_notes,
-          photo_url ?? "no photo provided",
+          farm_location || weather?.location || `${latitude},${longitude}`,
+          public_evidence_url ?? "",
+          photo_evidence_url || photo_url || "",
+          weather_source_url ?? "",
+          agro_source_url ?? "",
+          proposed_treatment ?? "",
+          pesticide_name ?? "",
+          pesticide_guidance_url ?? "",
           JSON.stringify(weather ?? {}),
           policy_id ?? "",
           requestId,
@@ -201,35 +230,46 @@ export async function POST(request: NextRequest) {
 
       genlayerResult = typeof resultData === "string" ? JSON.parse(resultData) : resultData;
     } catch (glError: any) {
-      console.error("Genlayer error (using AI fallback):", glError.message);
-      genlayerResult = {
-        consensus_outcome: "approved",
-        recommended_treatment: generateTreatment(crop_name ?? "crop", farmer_notes, weather),
-        confidence_score: 78,
-        risk_score: 35,
-        reasoning: `Based on the reported symptoms (${farmer_notes.slice(0, 150)}), AI analysis recommends the following treatment. Weather conditions: ${weather ? `${weather.temperature}°C, ${weather.humidity}% humidity, ${weather.condition}` : "unavailable"}.`,
-        treatment_timing: "Apply treatment within 3-5 days for best results",
-        warnings: "Monitor the crop closely after treatment. If symptoms persist after 7 days, submit a follow-up validation.",
-      };
+      console.error("Genlayer evidence verification failed:", glError.message);
+      await supabase.from("validation_requests")
+        .update({ status: "failed", genlayer_tx_hash: txHash }).eq("id", requestId);
+      return NextResponse.json(
+        { error: "GenLayer evidence verification failed. No backend fallback verdict was generated.", request_id: requestId },
+        { status: 502 },
+      );
     }
 
     // 6. Write result
-    const finalStatus = genlayerResult.consensus_outcome === "escalated" ? "escalated" : "approved";
+    const verdict = genlayerResult.verdict ?? genlayerResult.consensus_outcome;
+    const treatmentSafety = genlayerResult.treatment_safety;
+    const confidenceScore = genlayerResult.confidence_score ?? confidenceScoreFromBand(genlayerResult.confidence_band);
+    const riskScore = genlayerResult.risk_score ?? riskScoreFromVerdict(verdict, treatmentSafety);
+    const finalStatus = verdict === "approved" ? "approved"
+      : verdict === "needs_expert_review" ? "escalated"
+      : "failed";
+    const reason = genlayerResult.reason ?? genlayerResult.reasoning ?? "Evidence-backed GenLayer validator consensus completed.";
 
     await Promise.all([
       supabase.from("validation_results").insert({
         request_id: requestId,
-        consensus_outcome: genlayerResult.consensus_outcome,
-        recommended_treatment: genlayerResult.recommended_treatment,
-        confidence_score: genlayerResult.confidence_score,
-        risk_score: genlayerResult.risk_score,
+        consensus_outcome: verdict,
+        recommended_treatment: genlayerResult.recommended_treatment ?? proposed_treatment ?? "Needs expert review before treatment",
+        confidence_score: confidenceScore,
+        risk_score: riskScore,
         validator_votes: [{
-          validator_id: txHash ? "genlayer-consensus" : "ai-fallback",
-          vote: genlayerResult.recommended_treatment,
-          reasoning: genlayerResult.reasoning,
-          confidence: genlayerResult.confidence_score,
+          validator_id: "genlayer-consensus",
+          vote: verdict,
+          reasoning: reason,
+          confidence: confidenceScore,
+          evidence_core: {
+            evidence_checked: genlayerResult.evidence_checked,
+            weather_consistent: genlayerResult.weather_consistent,
+            photo_support: genlayerResult.photo_support,
+            treatment_safety: treatmentSafety,
+            confidence_band: genlayerResult.confidence_band,
+          },
         }],
-        reasoning: `${genlayerResult.reasoning}\n\nTiming: ${genlayerResult.treatment_timing}\nWarnings: ${genlayerResult.warnings}`,
+        reasoning: reason,
         on_chain_tx_hash: txHash,
       }),
       supabase.from("validation_requests").update({ status: finalStatus }).eq("id", requestId),
@@ -243,15 +283,15 @@ export async function POST(request: NextRequest) {
       entity_id: requestId,
       action: "validated",
       metadata: {
-        outcome: genlayerResult.consensus_outcome,
-        confidence: genlayerResult.confidence_score,
-        risk: genlayerResult.risk_score,
+        outcome: verdict,
+        confidence_band: genlayerResult.confidence_band,
+        risk: riskScore,
         tx_hash: txHash,
         on_chain: !!txHash,
       },
     });
 
-    return NextResponse.json({ request_id: requestId, outcome: genlayerResult.consensus_outcome });
+    return NextResponse.json({ request_id: requestId, outcome: verdict });
   } catch (err: any) {
     console.error("[validate]", err);
     return NextResponse.json({ error: err.message ?? "Internal error" }, { status: 500 });

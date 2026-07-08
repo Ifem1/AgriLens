@@ -5,9 +5,9 @@
 //   3. Fetch live weather from OpenWeatherMap
 //   4. Create validation_request row (status: validating)
 //   5. Build Genlayer call payload
-//   6. Send transaction to Genlayer contract (validate_crop)
+//   6. Send transaction to Genlayer contract (submit_validation)
 //   7. Poll Genlayer until finalized (max 120 s)
-//   8. Read result via get_result view call
+//   8. Read result via get_validation_result view call
 //   9. Write validation_result row + update request status
 //  10. Increment subscription usage + write audit event
 
@@ -81,6 +81,19 @@ interface WeatherSnapshot {
   fetched_at: string;
 }
 
+function confidenceScoreFromBand(band: string | undefined): number {
+  if (band === "high") return 85;
+  if (band === "medium") return 65;
+  return 35;
+}
+
+function riskScoreFromVerdict(verdict: string | undefined, treatmentSafety: string | undefined): number {
+  if (verdict === "rejected" || treatmentSafety === "unsafe") return 85;
+  if (verdict === "needs_expert_review" || treatmentSafety === "needs_expert_review") return 70;
+  if (verdict === "insufficient_evidence") return 55;
+  return 30;
+}
+
 async function fetchWeather(lat: number, lon: number): Promise<WeatherSnapshot> {
   const apiKey = Deno.env.get("OPENWEATHERMAP_API_KEY");
   if (!apiKey) throw new Error("OpenWeatherMap API key not configured");
@@ -146,6 +159,14 @@ serve(async (req: Request) => {
       crop_stage: string;
       farmer_notes: string;
       photo_url: string | null;
+      farm_location?: string;
+      public_evidence_url?: string | null;
+      photo_evidence_url?: string | null;
+      weather_source_url?: string | null;
+      agro_source_url?: string | null;
+      proposed_treatment?: string | null;
+      pesticide_name?: string | null;
+      pesticide_guidance_url?: string | null;
       policy_id: string | null;
       latitude: number;
       longitude: number;
@@ -154,7 +175,26 @@ serve(async (req: Request) => {
       is_paid?: boolean;
     };
 
-    const { crop_name, crop_id, crop_stage, farmer_notes, photo_url, policy_id, latitude, longitude, visibility, is_paid } = body;
+    const {
+      crop_name,
+      crop_id,
+      crop_stage,
+      farmer_notes,
+      photo_url,
+      farm_location,
+      public_evidence_url,
+      photo_evidence_url,
+      weather_source_url,
+      agro_source_url,
+      proposed_treatment,
+      pesticide_name,
+      pesticide_guidance_url,
+      policy_id,
+      latitude,
+      longitude,
+      visibility,
+      is_paid,
+    } = body;
 
     // ── 1. Get caller's org ──────────────────────────────────────────────────
     const { data: membership } = await supabase
@@ -222,6 +262,14 @@ serve(async (req: Request) => {
         photo_url,
         farmer_notes,
         weather_snapshot: weather,
+        farm_location: farm_location || weather.location || `${latitude},${longitude}`,
+        public_evidence_url: public_evidence_url || null,
+        photo_evidence_url: photo_evidence_url || photo_url || null,
+        weather_source_url: weather_source_url || null,
+        agro_source_url: agro_source_url || null,
+        proposed_treatment: proposed_treatment || null,
+        pesticide_name: pesticide_name || null,
+        pesticide_guidance_url: pesticide_guidance_url || null,
         policy_id,
         status: "validating",
         visibility: visibility ?? "public",
@@ -234,13 +282,24 @@ serve(async (req: Request) => {
     const requestId: string = request.id;
 
     // ── 8. Call Genlayer contract ────────────────────────────────────────────
-    const txHash = await sendContractWrite(fromAddress, "validate_crop", [
+    const txHash = await sendContractWrite(fromAddress, "submit_validation", [
       requestId,
+      orgId,
+      "direct",
       cropName,
       crop_stage,
       farmer_notes,
+      farm_location || weather.location || `${latitude},${longitude}`,
+      public_evidence_url ?? "",
+      photo_evidence_url || photo_url || "",
+      weather_source_url ?? "",
+      agro_source_url ?? "",
+      proposed_treatment ?? "",
+      pesticide_name ?? "",
+      pesticide_guidance_url ?? "",
       JSON.stringify(weather),
-      policyRulesJson,
+      policy_id ?? "",
+      requestId,
     ]);
 
     // Store tx hash on the request row
@@ -253,53 +312,66 @@ serve(async (req: Request) => {
     await waitForFinalization(txHash);
 
     // ── 10. Read the consensus result ────────────────────────────────────────
-    const resultJson = await readContractView("get_result", [requestId]);
+    const resultJson = await readContractView("get_validation_result", [requestId]);
     const result = JSON.parse(resultJson) as {
-      diagnosis: string;
-      recommended_treatment: string;
-      alternative_treatments: string[];
-      reasoning: string;
-      confidence_score: number;
-      risk_score: number;
-      consensus_outcome: string;
-      treatment_timing: string;
-      warnings: string;
+      recommended_treatment?: string;
+      reasoning?: string;
+      reason?: string;
+      confidence_score?: number;
+      risk_score?: number;
+      consensus_outcome?: string;
+      verdict?: string;
+      evidence_checked?: boolean;
+      weather_consistent?: boolean;
+      photo_support?: string;
+      treatment_safety?: string;
+      confidence_band?: string;
     };
+    const verdict = result.verdict ?? result.consensus_outcome;
+    const confidenceScore = result.confidence_score ?? confidenceScoreFromBand(result.confidence_band);
+    const riskScore = result.risk_score ?? riskScoreFromVerdict(verdict, result.treatment_safety);
+    const reason = result.reason ?? result.reasoning ?? "Evidence-backed GenLayer validator consensus completed.";
 
     // Build validator_votes array (Genlayer single-contract call produces one vote;
     // the consensus mechanism aggregates across validators internally)
     const validatorVotes = [{
       validator_id: "genlayer-consensus",
-      vote: result.recommended_treatment,
-      reasoning: result.reasoning,
-      confidence: result.confidence_score,
+      vote: verdict,
+      reasoning: reason,
+      confidence: confidenceScore,
+      evidence_core: {
+        evidence_checked: result.evidence_checked,
+        weather_consistent: result.weather_consistent,
+        photo_support: result.photo_support,
+        treatment_safety: result.treatment_safety,
+        confidence_band: result.confidence_band,
+      },
     }];
 
     // ── 11. Write result + update request status ─────────────────────────────
-    const finalStatus = result.consensus_outcome === "escalated" ? "escalated"
-      : result.consensus_outcome === "approved" ? "approved"
-      : result.consensus_outcome === "policy_blocked" ? "failed"
-      : "approved";
+    const finalStatus = verdict === "approved" ? "approved"
+      : verdict === "needs_expert_review" ? "escalated"
+      : "failed";
 
     await Promise.all([
       supabase.from("validation_results").insert({
         request_id: requestId,
-        consensus_outcome: result.consensus_outcome,
-        recommended_treatment: result.recommended_treatment,
-        confidence_score: result.confidence_score,
-        risk_score: result.risk_score,
+        consensus_outcome: verdict,
+        recommended_treatment: result.recommended_treatment ?? proposed_treatment ?? "Needs expert review before treatment",
+        confidence_score: confidenceScore,
+        risk_score: riskScore,
         validator_votes: validatorVotes,
-        reasoning: `${result.reasoning}\n\nTiming: ${result.treatment_timing}\nWarnings: ${result.warnings}`,
+        reasoning: reason,
         on_chain_tx_hash: txHash,
       }),
       supabase.from("validation_requests").update({ status: finalStatus }).eq("id", requestId),
     ]);
 
     // ── 12. Handle escalations ───────────────────────────────────────────────
-    if (result.consensus_outcome === "escalated") {
+    if (verdict === "needs_expert_review") {
       await supabase.from("escalations").insert({
         request_id: requestId,
-        reason: `Low confidence (${result.confidence_score}%) with high risk (${result.risk_score}%). Requires human agronomist review.`,
+        reason: `Evidence-backed validation requires expert review. Confidence band: ${result.confidence_band ?? "low"}.`,
       });
     }
 
@@ -313,15 +385,15 @@ serve(async (req: Request) => {
         entity_id: requestId,
         action: "validated",
         metadata: {
-          outcome: result.consensus_outcome,
-          confidence: result.confidence_score,
-          risk: result.risk_score,
+          outcome: verdict,
+          confidence_band: result.confidence_band,
+          risk: riskScore,
           tx_hash: txHash,
         },
       }),
     ]);
 
-    return respond({ request_id: requestId, outcome: result.consensus_outcome });
+    return respond({ request_id: requestId, outcome: verdict });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal error";
     console.error("[submit-validation]", message);

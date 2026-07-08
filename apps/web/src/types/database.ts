@@ -2,7 +2,7 @@ export type Json = string | number | boolean | null | { [key: string]: Json } | 
 
 export type PlanTier = "free" | "starter" | "pro" | "enterprise";
 export type ValidationStatus = "pending" | "validating" | "approved" | "failed" | "escalated" | "regenerating";
-export type ConsensusOutcome = "approved" | "low_confidence" | "escalated" | "policy_blocked" | "insufficient_evidence";
+export type ConsensusOutcome = "approved" | "rejected" | "needs_expert_review" | "low_confidence" | "escalated" | "policy_blocked" | "insufficient_evidence";
 export type OrgRole = "owner" | "admin" | "member" | "viewer";
 
 export interface Organization {
@@ -92,6 +92,14 @@ export interface ValidationRequest {
   photo_url: string | null;
   farmer_notes: string | null;
   weather_snapshot: Json | null;
+  farm_location: string | null;
+  public_evidence_url: string | null;
+  photo_evidence_url: string | null;
+  weather_source_url: string | null;
+  agro_source_url: string | null;
+  proposed_treatment: string | null;
+  pesticide_name: string | null;
+  pesticide_guidance_url: string | null;
   policy_id: string | null;
   status: ValidationStatus;
   created_at: string;
@@ -104,6 +112,12 @@ export interface ValidationResult {
   recommended_treatment: string;
   confidence_score: number | null;
   risk_score: number | null;
+  evidence_checked?: boolean | null;
+  weather_consistent?: boolean | null;
+  photo_support?: string | null;
+  treatment_safety?: string | null;
+  verdict?: string | null;
+  confidence_band?: string | null;
   validator_votes: Json;
   reasoning: string | null;
   on_chain_tx_hash: string | null;
@@ -115,6 +129,13 @@ export interface ValidatorVote {
   vote: string;
   reasoning: string;
   confidence: number;
+  evidence_core?: {
+    evidence_checked?: boolean;
+    weather_consistent?: boolean;
+    photo_support?: string;
+    treatment_safety?: string;
+    confidence_band?: string;
+  };
 }
 
 export interface WeatherSnapshot {

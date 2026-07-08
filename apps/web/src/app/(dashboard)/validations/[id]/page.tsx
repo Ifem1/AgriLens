@@ -115,6 +115,14 @@ Additional context: ${premiumForm.additionalContext}
           crop_stage: request.crop_stage,
           farmer_notes: enhanced,
           photo_url: request.photo_url,
+          farm_location: (request as any).farm_location,
+          public_evidence_url: (request as any).public_evidence_url,
+          photo_evidence_url: (request as any).photo_evidence_url,
+          weather_source_url: (request as any).weather_source_url,
+          agro_source_url: (request as any).agro_source_url,
+          proposed_treatment: (request as any).proposed_treatment,
+          pesticide_name: (request as any).pesticide_name,
+          pesticide_guidance_url: (request as any).pesticide_guidance_url,
           latitude: (request as any).latitude,
           longitude: (request as any).longitude,
           visibility: "private",
@@ -168,6 +176,7 @@ Additional context: ${premiumForm.additionalContext}
   const outcomeBadge = (outcome: string) => {
     const map: Record<string, "success" | "warning" | "danger" | "escalated" | "info"> = {
       approved: "success", low_confidence: "warning", escalated: "escalated",
+      rejected: "danger", needs_expert_review: "escalated",
       policy_blocked: "danger", insufficient_evidence: "info",
     };
     return <Badge variant={map[outcome] ?? "neutral"}>{outcome.replace(/_/g, " ")}</Badge>;
@@ -223,6 +232,31 @@ Additional context: ${premiumForm.additionalContext}
               <Badge variant="info">{request.crop_stage}</Badge>
             </div>
           </div>
+          {((request as any).farm_location || (request as any).public_evidence_url || (request as any).weather_source_url || (request as any).pesticide_guidance_url) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 pt-4 border-t" style={{ borderColor: "var(--al-border)" }}>
+              {[
+                { label: "Farm Location", value: (request as any).farm_location },
+                { label: "Public Evidence", value: (request as any).public_evidence_url },
+                { label: "Weather Source", value: (request as any).weather_source_url },
+                { label: "Agro Source", value: (request as any).agro_source_url },
+                { label: "Photo Evidence", value: (request as any).photo_evidence_url },
+                { label: "Treatment", value: (request as any).proposed_treatment },
+                { label: "Pesticide", value: (request as any).pesticide_name },
+                { label: "Guidance", value: (request as any).pesticide_guidance_url },
+              ].filter((item) => item.value).map((item) => (
+                <div key={item.label}>
+                  <p className="text-xs mb-1" style={{ color: "var(--al-sec)" }}>{item.label}</p>
+                  {String(item.value).startsWith("http") ? (
+                    <a href={String(item.value)} target="_blank" rel="noreferrer" className="text-sm inline-flex items-center gap-1" style={{ color: "#8686AC" }}>
+                      Public source <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : (
+                    <p className="text-sm" style={{ color: "var(--al-text)" }}>{String(item.value)}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Weather */}
@@ -262,18 +296,35 @@ Additional context: ${premiumForm.additionalContext}
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--al-text)" }}>
                   <ShieldCheck className="h-4 w-4" style={{ color: "#8686AC" }} />
-                  Consensus Diagnosis
+                  Evidence-backed Verdict
                 </h3>
                 {outcomeBadge(result.consensus_outcome)}
               </div>
 
               <div className="space-y-4">
+                {((result as any).evidence_checked !== undefined || votes[0]?.evidence_core) && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {[
+                      { label: "Evidence Checked", value: String((result as any).evidence_checked ?? votes[0]?.evidence_core?.evidence_checked ?? "unknown") },
+                      { label: "Weather Consistent", value: String((result as any).weather_consistent ?? votes[0]?.evidence_core?.weather_consistent ?? "unknown") },
+                      { label: "Photo Support", value: (result as any).photo_support ?? votes[0]?.evidence_core?.photo_support ?? "not_checked" },
+                      { label: "Treatment Safety", value: (result as any).treatment_safety ?? votes[0]?.evidence_core?.treatment_safety ?? "insufficient_evidence" },
+                      { label: "Confidence Band", value: (result as any).confidence_band ?? votes[0]?.evidence_core?.confidence_band ?? "low" },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded-lg p-3" style={{ background: "var(--al-bg)", border: "1px solid var(--al-border)" }}>
+                        <p className="text-xs mb-1" style={{ color: "var(--al-sec)" }}>{item.label}</p>
+                        <p className="text-sm font-semibold" style={{ color: "var(--al-text)" }}>{item.value.replace(/_/g, " ")}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Recommended Treatment */}
                 <div
                   className="rounded-xl p-4"
                   style={{ background: "rgba(80,80,129,0.12)", border: "1px solid rgba(80,80,129,0.3)" }}
                 >
-                  <p className="text-xs font-medium mb-1" style={{ color: "var(--al-muted)" }}>Recommended Treatment</p>
+                  <p className="text-xs font-medium mb-1" style={{ color: "var(--al-muted)" }}>Treatment Review</p>
                   <p className="text-base font-semibold" style={{ color: "var(--al-text)" }}>{result.recommended_treatment}</p>
                 </div>
 

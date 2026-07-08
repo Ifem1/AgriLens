@@ -68,7 +68,7 @@ import json
 #  Module-level constants
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 PLAN_LIMITS = {
     "free":       20,
@@ -79,12 +79,32 @@ PLAN_LIMITS = {
 
 VALID_OUTCOMES = {
     "approved",
+    "rejected",
+    "needs_expert_review",
     "low_confidence",
     "escalated",
     "policy_blocked",
     "insufficient_evidence",
     "regenerating",
 }
+
+VALID_EVIDENCE_VERDICTS = {
+    "approved",
+    "rejected",
+    "needs_expert_review",
+    "insufficient_evidence",
+}
+
+VALID_CONFIDENCE_BANDS = {"low", "medium", "high"}
+
+VALID_TREATMENT_SAFETY = {
+    "safe",
+    "unsafe",
+    "needs_expert_review",
+    "insufficient_evidence",
+}
+
+VALID_PHOTO_SUPPORT = {"supportive", "weak", "not_checked", "unavailable"}
 
 VALID_PLAN_TIERS = {"free", "starter", "pro", "enterprise"}
 
@@ -187,6 +207,195 @@ def _strip_fences(text: str) -> str:
         end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
         text = "\n".join(lines[1:end]).strip()
     return text
+
+
+def _trim_text(text: str, limit: int = 3500) -> str:
+    """Keep fetched web evidence bounded for validator prompts."""
+    if not text:
+        return ""
+    text = str(text).replace("\x00", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n...[truncated]"
+
+
+def _response_to_text(response) -> str:
+    """Normalize common GenLayer web response shapes to text."""
+    if response is None:
+        return ""
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict):
+        for key in ("text", "body", "content", "data"):
+            value = response.get(key)
+            if isinstance(value, str):
+                return value
+        return json.dumps(response)
+    for attr in ("text", "body", "content", "data"):
+        try:
+            value = getattr(response, attr)
+            if isinstance(value, str):
+                return value
+        except Exception:
+            pass
+    return str(response)
+
+
+def _fetch_public_evidence(url: str, label: str) -> dict:
+    """
+    Fetch a public evidence URL from inside validator execution.
+
+    If a source is missing or inaccessible, the contract records that limitation
+    instead of treating the user's description as verified.
+    """
+    cleaned = (url or "").strip()
+    if not cleaned:
+        return {"label": label, "url": "", "status": "not_provided", "content": ""}
+    try:
+        response = gl.nondet.web.request(cleaned)
+        content = _trim_text(_response_to_text(response))
+        return {
+            "label": label,
+            "url": cleaned,
+            "status": "fetched" if content else "unavailable",
+            "content": content,
+        }
+    except Exception as exc:
+        return {
+            "label": label,
+            "url": cleaned,
+            "status": "unavailable",
+            "content": f"fetch_error: {str(exc)[:180]}",
+        }
+
+
+def _build_evidence_validation_prompt(
+    crop_name: str,
+    farm_location: str,
+    claim: str,
+    proposed_treatment: str,
+    pesticide_name: str,
+    weather_evidence: dict,
+    agro_evidence: dict,
+    photo_evidence: dict,
+    pesticide_evidence: dict,
+    policy_rules: str,
+    org_region: str,
+) -> str:
+    """Build the bounded evidence-backed validation prompt."""
+    fetched_bundle = json.dumps({
+        "weather_or_agro_source": weather_evidence,
+        "public_agro_source": agro_evidence,
+        "photo_or_evidence_source": photo_evidence,
+        "pesticide_or_guidance_source": pesticide_evidence,
+    })
+
+    return f"""You are a GenLayer validator acting as an agronomist evidence reviewer.
+
+Use ONLY the submitted claim and the fetched public evidence below. Do not assume inaccessible or private content is verified.
+
+INPUT
+crop: {crop_name}
+farm_location: {farm_location}
+region_or_jurisdiction: {org_region}
+problem_claim_or_treatment_request: {claim}
+proposed_treatment: {proposed_treatment}
+pesticide_name: {pesticide_name}
+policy_rules: {policy_rules if policy_rules else "none"}
+
+FETCHED_PUBLIC_EVIDENCE
+{fetched_bundle}
+
+ASSESSMENT RULES
+- evidence_checked is true only when at least one submitted public URL was fetched with status "fetched".
+- weather_consistent is true only when fetched weather/agro evidence supports the claimed crop issue or treatment timing. If no relevant fetched weather/agro evidence exists, use false.
+- photo_support must be one of supportive, weak, not_checked, unavailable.
+- If photo evidence is a direct image or lacks readable caption/metadata/page text, do not claim image-level analysis. Use weak, not_checked, or unavailable.
+- treatment_safety must be one of safe, unsafe, needs_expert_review, insufficient_evidence.
+- A pesticide/treatment is safe only when fetched public guidance supports its use for this crop/issue and no obvious safety/legal conflict appears.
+- Use needs_expert_review for safety-critical treatment advice when evidence is weak, jurisdiction is unclear, label details are missing, or public guidance is uncertain.
+- verdict must be one of approved, rejected, needs_expert_review, insufficient_evidence.
+- Use approved only when evidence supports the claim and treatment_safety is safe or no treatment was requested.
+- Use rejected when fetched evidence contradicts the claim or shows the treatment is unsafe.
+- Use insufficient_evidence when sources are missing, inaccessible, or too thin to validate the claim.
+- confidence_band must be low, medium, or high. Do not use numeric confidence.
+
+Return ONLY this minimal canonical JSON. No prose, no markdown:
+{{
+  "evidence_checked": <true|false>,
+  "weather_consistent": <true|false>,
+  "photo_support": "<supportive|weak|not_checked|unavailable>",
+  "treatment_safety": "<safe|unsafe|needs_expert_review|insufficient_evidence>",
+  "verdict": "<approved|rejected|needs_expert_review|insufficient_evidence>",
+  "confidence_band": "<low|medium|high>"
+}}"""
+
+
+def _evidence_reason(core: dict, crop_name: str, issue: str) -> str:
+    """Generate a short deterministic explanation outside consensus equality."""
+    checked = "fetched public evidence" if core.get("evidence_checked") else "could not fetch sufficient public evidence"
+    weather = "weather evidence was consistent" if core.get("weather_consistent") else "weather evidence was not independently supportive"
+    return (
+        f"AgriLens validators {checked} for {crop_name}. "
+        f"For the submitted issue ({issue[:140]}), {weather}; "
+        f"photo support is {core.get('photo_support')}; treatment safety is {core.get('treatment_safety')}."
+    )
+
+
+def _parse_evidence_core(result_str: str) -> dict:
+    """Parse and canonicalize the minimal evidence consensus JSON."""
+    try:
+        core = json.loads(result_str)
+    except Exception:
+        core = {}
+
+    evidence_checked = bool(core.get("evidence_checked", False))
+    weather_consistent = bool(core.get("weather_consistent", False))
+    photo_support = core.get("photo_support", "not_checked")
+    treatment_safety = core.get("treatment_safety", "insufficient_evidence")
+    verdict = core.get("verdict", "insufficient_evidence")
+    confidence_band = core.get("confidence_band", "low")
+
+    if photo_support not in VALID_PHOTO_SUPPORT:
+        photo_support = "not_checked"
+    if treatment_safety not in VALID_TREATMENT_SAFETY:
+        treatment_safety = "insufficient_evidence"
+    if verdict not in VALID_EVIDENCE_VERDICTS:
+        verdict = "insufficient_evidence"
+    if confidence_band not in VALID_CONFIDENCE_BANDS:
+        confidence_band = "low"
+
+    if treatment_safety == "unsafe":
+        verdict = "rejected"
+    if not evidence_checked and verdict == "approved":
+        verdict = "insufficient_evidence"
+
+    return {
+        "evidence_checked": evidence_checked,
+        "weather_consistent": weather_consistent,
+        "photo_support": photo_support,
+        "treatment_safety": treatment_safety,
+        "verdict": verdict,
+        "confidence_band": confidence_band,
+    }
+
+
+def _score_from_band(confidence_band: str) -> int:
+    if confidence_band == "high":
+        return 85
+    if confidence_band == "medium":
+        return 65
+    return 35
+
+
+def _risk_from_verdict(verdict: str, treatment_safety: str) -> int:
+    if verdict == "rejected" or treatment_safety == "unsafe":
+        return 85
+    if verdict == "needs_expert_review" or treatment_safety == "needs_expert_review":
+        return 70
+    if verdict == "insufficient_evidence":
+        return 55
+    return 30
 
 
 def _build_diagnosis_prompt(
@@ -649,7 +858,14 @@ class AgriLensValidator(gl.Contract):
         crop_name:             str,
         crop_stage:            str,
         farmer_notes:          str,
-        photo_description:     str,
+        farm_location:         str,
+        public_evidence_url:   str,
+        photo_evidence_url:    str,
+        weather_source_url:    str,
+        agro_source_url:       str,
+        proposed_treatment:    str,
+        pesticide_name:        str,
+        pesticide_guidance_url: str,
         weather_json:          str,
         policy_id:             str,
         supabase_request_id:   str,
@@ -671,9 +887,16 @@ class AgriLensValidator(gl.Contract):
             agent_id:            Submitting agent ID (or "direct" for manual submissions).
             crop_name:           Common crop name (e.g. "Maize (Corn)").
             crop_stage:          Current growth stage.
-            farmer_notes:        Farmer's free-text observations.
-            photo_description:   Caption/description of the crop photo (from vision model).
-            weather_json:        JSON string with live weather data.
+            farmer_notes:        Farmer's free-text observations or treatment request.
+            farm_location:       Farm location as coordinates or a public place description.
+            public_evidence_url: Public evidence page fetched by validators.
+            photo_evidence_url:  Public photo, photo page, caption, or metadata URL fetched by validators.
+            weather_source_url:  Public weather source URL fetched by validators.
+            agro_source_url:     Public agricultural data source URL fetched by validators.
+            proposed_treatment:  Proposed treatment name, if any.
+            pesticide_name:      Pesticide name, if applicable.
+            pesticide_guidance_url: Public pesticide/agricultural guidance URL fetched by validators.
+            weather_json:        Backend weather snapshot; secondary context only.
             policy_id:           Active policy ID (or "" for no policy).
             supabase_request_id: UUID in Supabase validation_requests table for cross-referencing.
         """
@@ -710,7 +933,14 @@ class AgriLensValidator(gl.Contract):
             "crop_name":           crop_name,
             "crop_stage":          crop_stage,
             "farmer_notes":        farmer_notes,
-            "photo_description":   photo_description,
+            "farm_location":       farm_location,
+            "public_evidence_url": public_evidence_url,
+            "photo_evidence_url":  photo_evidence_url,
+            "weather_source_url":  weather_source_url,
+            "agro_source_url":     agro_source_url,
+            "proposed_treatment":  proposed_treatment,
+            "pesticide_name":      pesticide_name,
+            "pesticide_guidance_url": pesticide_guidance_url,
             "weather_json":        weather_json,
             "policy_id":           policy_id,
             "supabase_request_id": supabase_request_id,
@@ -720,65 +950,74 @@ class AgriLensValidator(gl.Contract):
         self.requests[request_id] = json.dumps(request_record)
 
         # ── Build prompt and run consensus ──────────────────────────────────
-        prompt = _build_diagnosis_prompt(
-            crop_name           = crop_name,
-            crop_stage          = crop_stage,
-            farmer_notes        = farmer_notes,
-            photo_description   = photo_description,
-            weather_json        = weather_json,
-            policy_rules        = policy_rules_str,
-            org_region          = org_region,
-            regeneration_context= "",
-        )
-
-        def run_agronomist_evaluation() -> str:
+        def run_evidence_validation() -> str:
+            weather_evidence = _fetch_public_evidence(weather_source_url, "weather_source")
+            agro_evidence = _fetch_public_evidence(agro_source_url or public_evidence_url, "agro_or_public_source")
+            photo_evidence = _fetch_public_evidence(photo_evidence_url, "photo_or_evidence_source")
+            pesticide_evidence = _fetch_public_evidence(pesticide_guidance_url, "pesticide_or_guidance_source")
+            prompt = _build_evidence_validation_prompt(
+                crop_name=crop_name,
+                farm_location=farm_location,
+                claim=f"{farmer_notes}\nBackend weather snapshot (not independent evidence): {weather_json}",
+                proposed_treatment=proposed_treatment,
+                pesticide_name=pesticide_name,
+                weather_evidence=weather_evidence,
+                agro_evidence=agro_evidence,
+                photo_evidence=photo_evidence,
+                pesticide_evidence=pesticide_evidence,
+                policy_rules=policy_rules_str,
+                org_region=org_region,
+            )
             raw = gl.nondet.exec_prompt(prompt)
             return _strip_fences(raw)
 
-        # Multiple validators run run_agronomist_evaluation independently.
-        # prompt_comparative compares their outputs using the equivalence rule.
+        # Multiple validators fetch evidence and compare the canonical verdict fields.
         result_str = gl.eq_principle.prompt_comparative(
-            run_agronomist_evaluation,
-            "The consensus_outcome field (approved, escalated, or policy_blocked) must match "
-            "across validators. The primary_diagnosis should identify the same general category "
-            "of issue (e.g. both say fungal, or both say nutrient deficiency) but exact wording "
-            "can differ freely. The recommended_treatment should suggest the same general approach "
-            "(e.g. both recommend fungicide, or both recommend fertilizer) but specific product "
-            "names, dosages, and phrasing can differ. The confidence_score and risk_score values "
-            "do NOT need to match — any numeric values are acceptable. All other fields like "
-            "reasoning, justification, timing, and warnings can differ freely.",
+            run_evidence_validation,
+            "Strictly compare the canonical JSON fields evidence_checked, weather_consistent, "
+            "photo_support, treatment_safety, verdict, and confidence_band. These stable fields "
+            "must match exactly across validators. Ignore formatting only.",
         )
-
-        # ── Parse and validate result ────────────────────────────────────────
-        result = self._parse_and_validate_result(result_str)
+        result = _parse_evidence_core(result_str)
+        confidence_score = _score_from_band(result["confidence_band"])
+        risk_score = _risk_from_verdict(result["verdict"], result["treatment_safety"])
+        reason = _evidence_reason(result, crop_name, farmer_notes)
 
         # ── Store result ─────────────────────────────────────────────────────
         validation_result = {
             "request_id":              request_id,
             "org_id":                  org_id,
             "supabase_request_id":     supabase_request_id,
-            "differential_diagnosis":  result.get("differential_diagnosis", []),
-            "primary_diagnosis":       result.get("primary_diagnosis", "Unknown"),
-            "diagnosis_justification": result.get("diagnosis_justification", ""),
-            "recommended_treatment":   result.get("recommended_treatment", "Consult agronomist"),
-            "treatment_active_ingredient": result.get("treatment_active_ingredient", ""),
-            "treatment_dose_rate":         result.get("treatment_dose_rate", ""),
-            "treatment_application_method": result.get("treatment_application_method", ""),
-            "treatment_timing":            result.get("treatment_timing", ""),
-            "alternative_treatments":      result.get("alternative_treatments", []),
-            "confidence_score":            result["confidence_score"],
-            "risk_score":                  result["risk_score"],
-            "disease_severity":            result["disease_severity"],
-            "weather_risk":                result["weather_risk"],
-            "regulatory_risk":             result["regulatory_risk"],
-            "treatment_efficacy":          result["treatment_efficacy"],
-            "consensus_outcome":           result["consensus_outcome"],
-            "pre_harvest_interval":        result.get("pre_harvest_interval", ""),
-            "re_entry_interval":           result.get("re_entry_interval", ""),
-            "environmental_warnings":      result.get("environmental_warnings", ""),
-            "safety_ppe":                  result.get("safety_ppe", ""),
-            "monitoring_protocol":         result.get("monitoring_protocol", ""),
-            "prevention_for_next_season":  result.get("prevention_for_next_season", ""),
+            "crop":                       crop_name,
+            "issue_detected":             farmer_notes[:180],
+            "evidence_checked":           result["evidence_checked"],
+            "weather_consistent":         result["weather_consistent"],
+            "photo_support":              result["photo_support"],
+            "treatment_safety":           result["treatment_safety"],
+            "verdict":                    result["verdict"],
+            "confidence_band":            result["confidence_band"],
+            "reason":                     reason,
+            "primary_diagnosis":          farmer_notes[:120],
+            "diagnosis_justification":    reason,
+            "recommended_treatment":      proposed_treatment or "Needs expert review before treatment",
+            "treatment_active_ingredient": pesticide_name,
+            "treatment_dose_rate":        "",
+            "treatment_application_method": "",
+            "treatment_timing":           "Follow fetched public guidance; consult an expert when evidence is weak",
+            "alternative_treatments":     [],
+            "confidence_score":           confidence_score,
+            "risk_score":                 risk_score,
+            "disease_severity":           risk_score,
+            "weather_risk":               20 if result["weather_consistent"] else 70,
+            "regulatory_risk":            90 if result["treatment_safety"] == "unsafe" else 60 if result["treatment_safety"] == "needs_expert_review" else 20,
+            "treatment_efficacy":         70 if result["treatment_safety"] == "safe" else 0,
+            "consensus_outcome":          result["verdict"],
+            "pre_harvest_interval":       "",
+            "re_entry_interval":          "",
+            "environmental_warnings":     "Safety-critical treatment advice requires expert review when public evidence is weak or uncertain.",
+            "safety_ppe":                 "",
+            "monitoring_protocol":        "Monitor crop condition and submit stronger public evidence if available.",
+            "prevention_for_next_season": "",
             "finalized_at":                _now_iso(),
             "validator_caller":            caller,
         }
@@ -786,7 +1025,7 @@ class AgriLensValidator(gl.Contract):
         self.validations[request_id] = json.dumps(validation_result)
 
         # Update request status
-        request_record["status"] = result["consensus_outcome"]
+        request_record["status"] = result["verdict"]
         self.requests[request_id] = json.dumps(request_record)
 
         # ── Increment counters ───────────────────────────────────────────────
@@ -799,17 +1038,16 @@ class AgriLensValidator(gl.Contract):
             self.agents[agent_id] = json.dumps(agent)
 
         # ── Update org statistics ────────────────────────────────────────────
-        self._update_org_stats(org_id, result)
+        self._update_org_stats(org_id, validation_result)
 
         # ── Auto-escalate if required ────────────────────────────────────────
-        outcome = result["consensus_outcome"]
-        if outcome in ("escalated", "policy_blocked"):
+        outcome = result["verdict"]
+        if outcome in ("rejected", "needs_expert_review", "insufficient_evidence"):
             esc_id = f"esc::{request_id}"
             reason = (
-                f"Consensus outcome: {outcome}. "
-                f"Confidence: {result['confidence_score']}%, "
-                f"Risk: {result['risk_score']}%, "
-                f"Regulatory risk: {result['regulatory_risk']}%."
+                f"Evidence verdict: {outcome}. "
+                f"Confidence band: {result['confidence_band']}. "
+                f"Treatment safety: {result['treatment_safety']}."
             )
             self._create_escalation(esc_id, request_id, org_id, caller, reason)
 
@@ -818,8 +1056,8 @@ class AgriLensValidator(gl.Contract):
             org_id, caller, "validation", request_id, "validated",
             {
                 "outcome":    outcome,
-                "confidence": result["confidence_score"],
-                "risk":       result["risk_score"],
+                "confidence_band": result["confidence_band"],
+                "risk":       risk_score,
                 "crop":       crop_name,
                 "stage":      crop_stage,
             },
@@ -1170,6 +1408,10 @@ class AgriLensValidator(gl.Contract):
 
         if outcome == "approved":
             stats["approved"]        = stats.get("approved", 0) + 1
+        elif outcome == "needs_expert_review":
+            stats["escalated"]       = stats.get("escalated", 0) + 1
+        elif outcome == "rejected":
+            stats["policy_blocked"]  = stats.get("policy_blocked", 0) + 1
         elif outcome == "escalated":
             stats["escalated"]       = stats.get("escalated", 0) + 1
         elif outcome == "policy_blocked":

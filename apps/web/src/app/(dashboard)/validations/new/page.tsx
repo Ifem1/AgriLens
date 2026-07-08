@@ -8,7 +8,7 @@ import { TopNav } from "@/components/layout/TopNav";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Upload, MapPin, Cloud, Globe, Lock, KeyRound } from "lucide-react";
+import { Upload, MapPin, Cloud, Globe, Lock, KeyRound, Link as LinkIcon, ShieldCheck } from "lucide-react";
 import { decryptPrivateKey } from "@/lib/wallet/encrypt";
 import type { Policy } from "@/types/database";
 
@@ -49,6 +49,14 @@ export default function NewValidationPage() {
   const [cropName, setCropName] = useState("");
   const [cropStage, setCropStage] = useState("");
   const [notes, setNotes] = useState("");
+  const [farmLocation, setFarmLocation] = useState("");
+  const [publicEvidenceUrl, setPublicEvidenceUrl] = useState("");
+  const [photoEvidenceUrl, setPhotoEvidenceUrl] = useState("");
+  const [weatherSourceUrl, setWeatherSourceUrl] = useState("");
+  const [agroSourceUrl, setAgroSourceUrl] = useState("");
+  const [proposedTreatment, setProposedTreatment] = useState("");
+  const [pesticideName, setPesticideName] = useState("");
+  const [pesticideGuidanceUrl, setPesticideGuidanceUrl] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [latitude, setLatitude] = useState("");
@@ -80,6 +88,7 @@ export default function NewValidationPage() {
       (pos) => {
         setLatitude(pos.coords.latitude.toFixed(6));
         setLongitude(pos.coords.longitude.toFixed(6));
+        setFarmLocation(`${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`);
         toast.success("Location detected");
       },
       () => toast.error("Unable to detect location")
@@ -121,7 +130,7 @@ export default function NewValidationPage() {
             signingKey = await decryptPrivateKey(walletRow.encrypted_private_key, password);
           }
         } catch {
-          toast.error("Wrong password — validation will use AI fallback instead of on-chain.");
+          toast.error("Wrong password - validation will use the configured GenLayer signer if available.");
         }
       }
 
@@ -145,6 +154,14 @@ export default function NewValidationPage() {
           crop_stage: cropStage,
           farmer_notes: notes,
           photo_url: photoUrl,
+          farm_location: farmLocation || `${latitude},${longitude}`,
+          public_evidence_url: publicEvidenceUrl || null,
+          photo_evidence_url: photoEvidenceUrl || photoUrl,
+          weather_source_url: weatherSourceUrl || null,
+          agro_source_url: agroSourceUrl || null,
+          proposed_treatment: proposedTreatment || null,
+          pesticide_name: pesticideName || null,
+          pesticide_guidance_url: pesticideGuidanceUrl || null,
           signing_key: signingKey,
           policy_id: policyId || null,
           latitude: parseFloat(latitude),
@@ -172,7 +189,7 @@ export default function NewValidationPage() {
           Submit Crop Evidence
         </h2>
         <p className="text-sm mb-8" style={{ color: "var(--al-sec)" }}>
-          Upload a photo and describe what you see. AI validators will analyze and recommend treatment.
+          AgriLens does not only rely on user descriptions. Evidence fetched by GenLayer validators is used to assess crop condition, weather relevance, and treatment safety.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -294,6 +311,101 @@ export default function NewValidationPage() {
             />
           </div>
 
+          {/* Public evidence */}
+          <div style={cardStyle}>
+            <p className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: "var(--al-text)" }}>
+              <ShieldCheck className="h-4 w-4" style={{ color: "var(--al-muted)" }} />
+              Evidence fetched by GenLayer validators
+            </p>
+            <p className="text-xs mb-4" style={{ color: "var(--al-sec)" }}>
+              Add public sources validators can fetch. Private or inaccessible links are marked as weak, unavailable, or not checked.
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label style={labelStyle}>Public evidence URL (optional)</label>
+                <input
+                  type="url"
+                  value={publicEvidenceUrl}
+                  onChange={(e) => setPublicEvidenceUrl(e.target.value)}
+                  placeholder="https://..."
+                  style={fieldStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Photo/evidence URL (optional)</label>
+                <input
+                  type="url"
+                  value={photoEvidenceUrl}
+                  onChange={(e) => setPhotoEvidenceUrl(e.target.value)}
+                  placeholder="Public photo page, caption, metadata, or evidence page"
+                  style={fieldStyle}
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label style={labelStyle}>Weather source URL (optional)</label>
+                  <input
+                    type="url"
+                    value={weatherSourceUrl}
+                    onChange={(e) => setWeatherSourceUrl(e.target.value)}
+                    placeholder="https://..."
+                    style={fieldStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Agro/public data URL (optional)</label>
+                  <input
+                    type="url"
+                    value={agroSourceUrl}
+                    onChange={(e) => setAgroSourceUrl(e.target.value)}
+                    placeholder="https://..."
+                    style={fieldStyle}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Treatment safety */}
+          <div style={cardStyle}>
+            <p className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--al-text)" }}>
+              <LinkIcon className="h-4 w-4" style={{ color: "var(--al-muted)" }} />
+              Treatment Safety Check
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label style={labelStyle}>Treatment or pesticide name (optional)</label>
+                <input
+                  type="text"
+                  value={proposedTreatment}
+                  onChange={(e) => setProposedTreatment(e.target.value)}
+                  placeholder="e.g. copper fungicide, neem oil, mancozeb..."
+                  style={fieldStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Pesticide name if applicable (optional)</label>
+                <input
+                  type="text"
+                  value={pesticideName}
+                  onChange={(e) => setPesticideName(e.target.value)}
+                  placeholder="Active ingredient or product name"
+                  style={fieldStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Pesticide/agricultural guidance URL (optional)</label>
+                <input
+                  type="url"
+                  value={pesticideGuidanceUrl}
+                  onChange={(e) => setPesticideGuidanceUrl(e.target.value)}
+                  placeholder="Public label, extension guide, or regulatory page"
+                  style={fieldStyle}
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Location */}
           <div style={cardStyle}>
             <div className="flex items-center justify-between mb-4">
@@ -309,6 +421,16 @@ export default function NewValidationPage() {
               >
                 Auto-detect
               </button>
+            </div>
+            <div className="mb-4">
+              <label style={labelStyle}>Farm Location</label>
+              <input
+                type="text"
+                value={farmLocation}
+                onChange={(e) => setFarmLocation(e.target.value)}
+                placeholder="Farm name, village/region, or coordinates"
+                style={fieldStyle}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -348,7 +470,7 @@ export default function NewValidationPage() {
               On-Chain Signing (optional)
             </p>
             <p className="text-xs mb-3" style={{ color: "var(--al-sec)" }}>
-              Enter your account password to sign this validation on Genlayer. Leave blank to use AI-only validation.
+              Enter your account password to sign this validation on GenLayer. Leave blank to use the configured server signer.
             </p>
             <input
               type="password"
@@ -371,7 +493,7 @@ export default function NewValidationPage() {
             }}
           >
             <Cloud className="h-4 w-4" />
-            {loading ? "Submitting..." : "Submit for Consensus Validation"}
+            {loading ? "Submitting..." : "Submit for Evidence Validation"}
           </button>
         </form>
       </div>

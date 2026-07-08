@@ -8,6 +8,14 @@ export interface SubmitValidationPayload {
   crop_stage: string;
   farmer_notes: string;
   policy_id: string;
+  farm_location?: string;
+  public_evidence_url?: string;
+  photo_evidence_url?: string;
+  weather_source_url?: string;
+  agro_source_url?: string;
+  proposed_treatment?: string;
+  pesticide_name?: string;
+  pesticide_guidance_url?: string;
   agent_id?: string;
   latitude: number;
   longitude: number;

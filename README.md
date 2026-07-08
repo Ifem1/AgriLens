@@ -1,65 +1,71 @@
 # AgriLens
 
-Decentralized crop validation platform powered by Genlayer intelligent contracts. Farmers submit crop evidence — photos, symptoms, and location — and receive AI-driven diagnoses and treatment recommendations validated through on-chain multi-validator consensus.
+AgriLens is a decentralized crop validation platform powered by GenLayer intelligent contracts. Farmers submit crop claims, public evidence sources, weather or agro references, photo evidence, and treatment requests. GenLayer validators fetch independent public evidence and reach consensus on crop condition, weather relevance, and treatment safety.
 
 ## How It Works
 
-1. **Submit Evidence** — A farmer uploads a crop photo, describes symptoms, and shares their location. Real-time weather data is fetched automatically via OpenWeatherMap.
+1. **Submit evidence** - A farmer describes the crop issue, shares farm location, and can add public evidence URLs, weather/agro source URLs, photo/evidence URLs, and pesticide or treatment guidance URLs.
 
-2. **On-Chain Consensus** — The evidence is sent to a Genlayer intelligent contract. Multiple independent AI validators each analyze the data using `gl.nondet.exec_prompt`, and Genlayer's equivalence principle (`gl.eq_principle.prompt_comparative`) ensures they agree on the diagnosis category and treatment approach before the result is finalized on-chain.
+2. **Fetch evidence in GenLayer** - The frontend and backend pass URLs to the contract, but they do not verify them. The GenLayer contract uses validator web access (`gl.nondet.web.request`) to fetch submitted public URLs inside consensus execution.
 
-3. **Receive Results** — The farmer gets a diagnosis, recommended treatment, confidence score, risk assessment, and timing guidance. Every validation is recorded on-chain with a transparent, tamper-proof audit trail.
+3. **Reach canonical consensus** - Validators evaluate fetched evidence with `gl.nondet.exec_prompt`, then `gl.eq_principle.prompt_comparative` compares a minimal canonical JSON verdict: evidence checked, weather consistency, photo support, treatment safety, verdict, and confidence band.
 
-This multi-validator consensus eliminates single-point-of-failure risks of centralized AI — no single model or server decides a farmer's treatment plan.
+4. **Receive a verdict** - Results are evidence-backed: approved, rejected, needs expert review, or insufficient evidence. Every validation is recorded with an on-chain transaction and audit trail.
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
+|-------|------------|
 | Frontend | Next.js 14 (App Router), Tailwind CSS, Recharts |
 | Auth & Database | Supabase (SSR auth, PostgreSQL, Storage) |
-| Blockchain | Genlayer Intelligent Contract (Python) on StudioNet |
-| Weather | OpenWeatherMap API |
+| Blockchain | GenLayer Intelligent Contract (Python) on StudioNet |
+| Weather | OpenWeatherMap API plus validator-fetched public weather/agro sources |
 | Wallet | Client-side key generation, AES-GCM encrypted storage |
 
-## Genlayer Integration
+## GenLayer Integration
 
-The core of AgriLens is the intelligent contract at [`contracts/agrilens_validator.py`](contracts/agrilens_validator.py). It handles:
+The core contract is [`contracts/agrilens_validator.py`](contracts/agrilens_validator.py). It handles:
 
-- **Organization & agent registration** — On-chain identity management for farms and automated agents
-- **Crop validation via LLM consensus** — Each validator independently runs an agronomist AI prompt, then `prompt_comparative` compares outputs to reach consensus on diagnosis and treatment
-- **Policy enforcement** — Optional regional agricultural policies that constrain validation outcomes
-- **Escalation handling** — Low-confidence or high-risk results are flagged for human agronomist review
-- **Audit trail** — Every validation, escalation, and resolution is stored immutably on-chain
-
-The contract uses `gl.nondet.exec_prompt` (non-deterministic LLM execution) inside `gl.eq_principle.prompt_comparative` (equivalence principle for consensus), which is the canonical Genlayer pattern for multi-validator AI agreement.
+- **Organization and agent registration** - On-chain identity management for farms and automated agents
+- **Evidence-backed validation** - Validators fetch submitted public sources using GenLayer web access and evaluate fetched content
+- **Strict canonical JSON consensus** - Consensus applies to stable fields instead of long explanations
+- **Treatment safety review** - Pesticide or treatment requests are checked against fetched public guidance where provided
+- **Escalation handling** - Rejected, uncertain, or safety-critical cases can be routed to expert review
+- **Audit trail** - Validations, escalations, and resolutions are stored immutably on-chain
 
 ## Features
 
-- **Crop Validation** — Submit symptoms and photos for AI-powered diagnosis with on-chain consensus
-- **Photo Evidence** — Upload crop photos stored on Supabase Storage
-- **Weather-Aware** — Automatic weather context from the farmer's location
-- **Community Knowledge Base** — Public validations shared to help other farmers
-- **Risk Analytics** — Dashboard with validation trends, confidence scores, and risk metrics
-- **Audit Trail** — Full history of all validations and on-chain transactions
-- **Policy Management** — Define regional rules that guide validation outcomes
-- **Escalation System** — Flag uncertain cases for expert review
+- **Crop validation** - Submit crop claims and public evidence for evidence-backed on-chain consensus
+- **Photo evidence** - Upload crop photos or provide public photo/evidence URLs
+- **Weather relevance** - Submit public weather/agro URLs for validator-side consistency checks
+- **Treatment safety** - Submit treatment names, pesticide names, and public guidance URLs
+- **Community knowledge base** - Public validations help other farmers with similar issues
+- **Risk analytics** - Dashboard with validation trends and outcome breakdowns
+- **Policy management** - Define regional rules that guide validation outcomes
+- **Escalation system** - Flag uncertain or safety-critical cases for expert review
+
+## Evidence Limitations
+
+- AgriLens can verify public web evidence submitted as URLs.
+- It should not claim to fully inspect private or inaccessible photos.
+- If image-level analysis is not supported, photo evidence is marked as supportive, weak, unavailable, or not_checked based on fetched page text, metadata, captions, or accessibility.
+- Safety-critical treatment advice returns needs_expert_review when evidence is weak, uncertain, inaccessible, or missing jurisdiction-specific label guidance.
 
 ## Project Structure
 
-```
+```text
 AgriLens/
-├── apps/web/                  # Next.js frontend
-│   ├── src/app/
-│   │   ├── (auth)/            # Login, registration
-│   │   ├── (dashboard)/       # Dashboard, validations, analytics, etc.
-│   │   └── api/validate/      # Validation API route (Genlayer + fallback)
-│   └── src/lib/
-│       ├── supabase/          # Supabase client & middleware
-│       └── wallet/            # Wallet generation & encryption
-├── contracts/                 # Genlayer intelligent contract (Python)
-├── scripts/                   # Contract deployment script
-└── supabase/functions/        # Supabase Edge Functions
+  apps/web/                  # Next.js frontend
+    src/app/
+      (auth)/                # Login, registration
+      (dashboard)/           # Dashboard, validations, analytics, etc.
+      api/validate/          # Passes evidence to GenLayer
+    src/lib/
+      supabase/              # Supabase client and middleware
+      wallet/                # Wallet generation and encryption
+  contracts/                 # GenLayer intelligent contract
+  scripts/                   # Contract deployment script
+  supabase/functions/        # Supabase Edge Functions
 ```
 
 ## Getting Started
@@ -67,8 +73,8 @@ AgriLens/
 ### Prerequisites
 
 - Node.js 18+
-- Supabase project (with `farmer-photos` storage bucket)
-- Genlayer contract deployed on StudioNet
+- Supabase project with a `farmer-photos` storage bucket
+- GenLayer contract deployed on StudioNet
 - OpenWeatherMap API key
 
 ### Environment Variables
@@ -98,7 +104,7 @@ npm run dev
 
 ### Deploy Contract
 
-Deploy the intelligent contract to Genlayer StudioNet via [Genlayer Studio](https://studio.genlayer.com), then set the contract address in your environment variables.
+Deploy the intelligent contract to GenLayer StudioNet via [GenLayer Studio](https://studio.genlayer.com), then set the contract address in your environment variables.
 
 ## License
 
