@@ -147,8 +147,11 @@ export async function POST(request: NextRequest) {
       const ownerClient = createGenlayerClient({ chain: studionet, account: ownerAccount });
 
       // User client for signing the validation tx
+      const testKey = process.env.GENLAYER_TEST_PRIVATE_KEY as `0x${string}` | undefined;
       const userAccount = signing_key
         ? createAccount(signing_key as `0x${string}`)
+        : testKey
+        ? createAccount(testKey)
         : ownerAccount;
       const glClient = createGenlayerClient({ chain: studionet, account: userAccount });
 
